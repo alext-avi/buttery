@@ -1,22 +1,20 @@
 {
-  "name": "hackday",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "name": "buttery",
+  "private": true,
+  "type": "commonjs",
+  "workspaces": ["packages/*", "apps/*"],
   "scripts": {
-    "test": "playwright test",
+    "dev": "npm run dev -w apps/server",
+    "test": "npm test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "e2e": "playwright test",
+    "db:up": "docker compose up -d db",
+    "db:migrate": "npm run db:migrate -w apps/server",
+    "token:create": "npm run token:create -w apps/server --",
     "reasoning:ping": "npm run ping -w packages/reasoning",
     "reasoning:eval": "npm run eval -w packages/reasoning --"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
   "devDependencies": {
     "@playwright/test": "^1.63.0"
-  },
-  "workspaces": [
-    "packages/*",
-    "apps/*"
-  ]
+  }
 }
