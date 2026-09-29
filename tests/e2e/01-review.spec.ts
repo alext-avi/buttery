@@ -26,6 +26,7 @@ test.describe.serial('receipt review on a phone', () => {
     await yogurt.getByLabel('Location').selectOption('freezer');
     await yogurt.getByRole('button', { name: 'Save' }).click();
     await expect(yogurt.getByText('Edited')).toBeVisible();
+    await expect(yogurt).toContainText('2 × 32 oz');
 
     const berries = page.getByTestId('op').filter({ hasText: 'STRAWBERRIES 2 LB' });
     await berries.getByRole('button', { name: 'Skip' }).click();
@@ -33,6 +34,7 @@ test.describe.serial('receipt review on a phone', () => {
     await page.getByRole('button', { name: 'Add 5 items' }).click();
     await expect(page.getByRole('status')).toContainText('Added 5 items');
     await expect(yogurt).toContainText('freezer');
+    await expect(yogurt).toContainText('2 × 32 oz');
     await expect(yogurt.getByText('Added')).toBeVisible();
 
     await page.getByRole('button', { name: 'Undo' }).click();

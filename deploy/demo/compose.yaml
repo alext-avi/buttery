@@ -1,0 +1,44 @@
+name: buttery-demo
+
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: buttery
+      POSTGRES_DB: buttery_demo
+      POSTGRES_PASSWORD: ${DEMO_DB_PASSWORD:?Set DEMO_DB_PASSWORD in the demo env file}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U buttery -d buttery_demo"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  app:
+    image: ${BUTTERY_DEMO_IMAGE:?Select a tested versioned image}
+    pull_policy: never
+    env_file:
+      - ${BUTTERY_DEMO_ENV_FILE:?Set the absolute path to the demo env file}
+    environment:
+      DATABASE_URL: postgres://buttery:${DEMO_DB_PASSWORD}@db:5432/buttery_demo
+      PORT: "8790"
+      PUBLIC_BASE_URL: ${DEMO_PUBLIC_BASE_URL:?Set DEMO_PUBLIC_BASE_URL}
+      SESSION_SECRET: ${DEMO_SESSION_SECRET:?Set DEMO_SESSION_SECRET}
+      SIGNUP_MODE: ${SIGNUP_MODE:-closed}
+    ports:
+      - "127.0.0.1:${DEMO_PORT:-8793}:8790"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8790/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      start_period: 30s
+      retries: 12
+    restart: unless-stopped
+
+volumes:
+  pgdata:
