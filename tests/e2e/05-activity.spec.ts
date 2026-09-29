@@ -27,3 +27,36 @@ test('using half of something updates its amount', async ({ page }) => {
   await expect(page.getByRole('status')).toContainText('Updated the amount');
   await expect(page.locator('dl.facts')).toContainText('0.5');
 });
+
+test('moving an item to another place', async ({ page }) => {
+  await signIn(page);
+  await page.goto('/inventory');
+  await page.getByTestId('lot').filter({ hasText: 'Greek yogurt' }).first().click();
+  await page.getByLabel('Move to').selectOption('pantry');
+  await page.getByRole('button', { name: 'Move', exact: true }).click();
+  await expect(page.getByRole('status')).toContainText('Moved to the pantry');
+  await expect(page.locator('header .eyebrow')).toContainText('pantry');
+});
+
+test('finishing an item takes it off the inventory list', async ({ page }) => {
+  await signIn(page);
+  await page.goto('/inventory');
+  await page.getByTestId('lot').filter({ hasText: 'Eggs' }).first().click();
+  await page.getByRole('button', { name: 'Finished' }).click();
+  await expect(page.getByRole('status')).toContainText('used up');
+  await expect(page.getByRole('button', { name: 'Finished' })).toHaveCount(0);
+  await page.goto('/inventory');
+  await expect(page.getByTestId('lot').filter({ hasText: 'Eggs' })).toHaveCount(0);
+});
+
+test('discarding asks first, then records it', async ({ page }) => {
+  await signIn(page);
+  await page.goto('/inventory');
+  await page.getByTestId('lot').filter({ hasText: 'Baby spinach' }).first().click();
+  page.once('dialog', (d) => d.dismiss());
+  await page.getByRole('button', { name: 'Discard' }).click();
+  await expect(page.getByRole('button', { name: 'Discard' })).toBeVisible();
+  page.once('dialog', (d) => d.accept());
+  await page.getByRole('button', { name: 'Discard' }).click();
+  await expect(page.getByRole('status')).toContainText('thrown away');
+});

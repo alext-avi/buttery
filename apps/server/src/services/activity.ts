@@ -245,6 +245,10 @@ async function prepare(deps: Deps, p: Principal, activities: Activity[], now: Da
       const { lot, food } = target!;
       const state = current.get(lot.id) ?? { ...facts(lot), expires: lot.expires };
       let r = applyActivity(state, { kind: act.kind, amount: toAmount(item.quantity), ...(item.to_location ? { toLocation: item.to_location } : {}) }, { perishability: food.perishability, shelfLife: shelfLifeOf(food) }, today);
+      if (r.refused) {
+        out.unresolved.push({ kind: act.kind, food_name: food.name, lot_id: lot.id, reason: `${food.name}: ${r.refused}`, candidates: [] });
+        continue;
+      }
       if (r.needsShelfLife) {
         const est = await estimate(deps, p.householdId, food, [r.needsShelfLife]);
         out.calls.push({ id: est.id, result: est.result });

@@ -67,13 +67,35 @@ export type ActivityInput = { kind: Exclude<ActivityKind, 'bought'>; amount?: Am
 const NEW_STATE: Partial<Record<ActivityInput['kind'], LotState>> = { froze: 'frozen', thawed: 'thawed', opened: 'opened' };
 const DEFAULT_PLACE: Partial<Record<ActivityInput['kind'], string>> = { froze: 'freezer', thawed: 'fridge' };
 
+/** Transitions that make no sense (or would silently reset an expiry clock) are refused, not applied. */
+function refusal(lot: LotFacts, act: ActivityInput): string | null {
+  if (act.kind === 'thawed' && lot.state !== 'frozen') return "It isn't frozen, so it can't be thawed.";
+  if (act.kind === 'froze' && lot.state === 'frozen') return "It's already frozen.";
+  if (act.kind === 'opened' && (lot.state === 'opened' || lot.state === 'thawed' || lot.state === 'prepared')) return "It's already opened.";
+  if (act.kind === 'moved' && !act.toLocation) return 'Where should it go? Give a to_location.';
+  if (act.kind === 'moved' && act.toLocation === lot.location) return `It's already in the ${lot.location}.`;
+  return null;
+}
+
+function currentExpiry(lot: LotFacts, food: { perishability: Perishability; shelfLife: ShelfLifeMap }): Expiry | null {
+  return computeEffectiveExpiry({
+    perishability: food.perishability,
+    state: lot.state,
+    anchors: { sealed: lot.acquiredOn ?? undefined, opened: lot.openedOn ?? undefined, frozen: lot.frozenOn ?? undefined, thawed: lot.thawedOn ?? undefined },
+    printedExpiryOn: lot.printedExpiryOn,
+    shelfLife: food.shelfLife,
+  });
+}
+
 /** The next state of a lot after an activity, with its expiry recomputed from the new anchors. */
 export function applyActivity(
   lot: LotFacts,
   act: ActivityInput,
   food: { perishability: Perishability; shelfLife: ShelfLifeMap },
   today: IsoDate,
-): { lot: LotFacts & { expires: Expiry | null }; needsShelfLife: LotState | null; notes: string[] } {
+): { lot: LotFacts & { expires: Expiry | null }; needsShelfLife: LotState | null; notes: string[]; refused: string | null } {
+  const refused = refusal(lot, act);
+  if (refused) return { lot: { ...lot, expires: currentExpiry(lot, food) }, needsShelfLife: null, notes: [], refused };
   const next: LotFacts = { ...lot };
   const notes: string[] = [];
   switch (act.kind) {
@@ -123,7 +145,7 @@ export function applyActivity(
     printedExpiryOn: next.printedExpiryOn,
     shelfLife: food.shelfLife,
   });
-  return { lot: { ...next, expires }, needsShelfLife, notes };
+  return { lot: { ...next, expires }, needsShelfLife, notes, refused: null };
 }
 
 /** Spec lot-selection rule: the lot expiring first, then the oldest; unknown dates last. */
