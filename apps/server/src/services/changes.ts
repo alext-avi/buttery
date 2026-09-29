@@ -152,6 +152,22 @@ export async function addLot(tx: Tx, cs: ChangeSetHandle, input: NewLotInput): P
   return lot!;
 }
 
+export type LotPatch = Partial<
+  Pick<LotRow, 'state' | 'location' | 'quantity' | 'package' | 'status' | 'expires' | 'printedExpiryOn' | 'openedOn' | 'frozenOn' | 'thawedOn' | 'notes' | 'lastEvidenceAt' | 'lastEvidenceObservationId'>
+>;
+
+/** Change an existing lot. Optimistic: fails if the lot changed since `before` was read. */
+export async function updateLot(tx: Tx, cs: ChangeSetHandle, before: LotRow, patch: LotPatch, causeObservationId?: string | null): Promise<LotRow> {
+  const [after] = await tx
+    .update(lots)
+    .set({ ...patch, version: sql`${lots.version} + 1`, updatedAt: new Date() })
+    .where(and(eq(lots.id, before.id), eq(lots.version, before.version)))
+    .returning();
+  if (!after) throw new AppError('conflict', 'That item changed while this was being applied. Try again.', 409, { lot_id: before.id });
+  await recordChange(tx, cs, { op: 'update_lot', lotId: before.id, foodId: before.foodId, before, after, causeObservationId });
+  return after;
+}
+
 export type UndoResult = {
   reverted_change_set_id: string;
   undo_change_set_id: string;
@@ -198,6 +214,33 @@ async function revertChange(tx: Tx, cs: ChangeSetHandle, r: ChangeRow, counts: C
         .where(eq(foods.id, r.foodId!));
       await recordChange(tx, cs, { op: 'remove_alias', foodId: r.foodId, before: { alias }, after: { alias } });
       counts.aliases_removed++;
+      return;
+    }
+    case 'update_lot': {
+      const b = r.before as LotRow & { lastEvidenceAt: string | null };
+      const [current] = await tx.select().from(lots).where(eq(lots.id, r.lotId!));
+      const [restored] = await tx
+        .update(lots)
+        .set({
+          state: b.state,
+          location: b.location,
+          quantity: b.quantity,
+          package: b.package,
+          status: b.status,
+          expires: b.expires,
+          printedExpiryOn: b.printedExpiryOn,
+          openedOn: b.openedOn,
+          frozenOn: b.frozenOn,
+          thawedOn: b.thawedOn,
+          notes: b.notes,
+          lastEvidenceAt: b.lastEvidenceAt ? new Date(b.lastEvidenceAt) : null,
+          lastEvidenceObservationId: b.lastEvidenceObservationId,
+          version: sql`${lots.version} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(eq(lots.id, r.lotId!))
+        .returning();
+      await recordChange(tx, cs, { op: 'restore_lot', lotId: r.lotId, foodId: r.foodId, before: current, after: restored });
       return;
     }
     case 'update_food': {

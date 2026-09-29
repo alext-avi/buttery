@@ -63,9 +63,36 @@ export type ReasoningResult<T> = {
 };
 
 export type ReasoningCache = { get(key: string): Promise<unknown | undefined>; set(key: string, value: unknown): Promise<void> };
+export type ParseActivityInput = {
+  text: string;
+  now: string;
+  context: {
+    lots: Array<{ lot_id: string; food_name: string; location: string; state: LotState; quantity_text: string }>;
+    locations: string[];
+    recipes: Array<{ recipe_id: string; title: string }>;
+  };
+};
+export type ParsedActivityItem = {
+  lot_id?: string;
+  food_name?: string;
+  quantity?: { kind: 'exact' | 'approx' | 'unknown'; amount?: number; unit?: string; fraction?: number };
+  to_location?: string;
+};
+export type ParseActivityOutput = {
+  activities: Array<{
+    kind: 'bought' | 'cooked' | 'used' | 'finished' | 'discarded' | 'froze' | 'thawed' | 'opened' | 'moved';
+    items: ParsedActivityItem[];
+    recipe_id?: string;
+    servings?: number;
+  }>;
+  ambiguities: Array<{ text: string; reason: string; candidate_lot_ids: string[] }>;
+  confidence: Confidence;
+};
+
 export type ReasoningContext = { householdId?: string; cache?: ReasoningCache };
 
 export interface ReasoningPort {
   canonicalizeItems(input: CanonicalizeInput, ctx?: ReasoningContext): Promise<ReasoningResult<CanonicalizeOutput>>;
   estimateShelfLife(input: ShelfLifeInput, ctx?: ReasoningContext): Promise<ReasoningResult<ShelfLifeOutput>>;
+  parseActivity(input: ParseActivityInput, ctx?: ReasoningContext): Promise<ReasoningResult<ParseActivityOutput>>;
 }

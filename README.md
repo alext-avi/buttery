@@ -10,10 +10,13 @@ you.
 It's calm, competent record-keeping, not a diet tracker. It is honest about uncertainty: "about
 half a jug, estimated from a photo 3 days ago".
 
-**Status (Sep 29):** receipts work end to end, from a photo in Claude to reviewed, undoable
-inventory, live at **https://140-82-48-162.sslip.io**. Fridge photos, recipes, shopping lists and
-"what did I cook" are designed in the [spec](docs/superpowers/specs/2026-09-29-buttery-design.md)
-and come next.
+**Status (Sep 29):** live at **https://140-82-48-162.sslip.io**:
+- **Receipts** end to end, from a photo in Claude to reviewed, undoable inventory.
+- **Telling Buttery what happened** ("froze the chicken", "we used half the milk"): Crusoe parses
+  your words; freezing, opening and thawing re-estimate expiry; everything is undoable.
+
+Fridge photos, recipes, shopping lists and "what did I cook" are designed in the
+[spec](docs/superpowers/specs/2026-09-29-buttery-design.md) and come next.
 
 ## Built on our sponsors
 
@@ -39,6 +42,8 @@ Inference**. The connected assistant reads the photo; Crusoe decides what each l
   produced.
 - **Cheap, and cheaper over time.** About $0.0006 per receipt. Confirmed receipt lines are learned
   as aliases, so the same line next time skips the model, and results are cached in Postgres.
+- **Understands what you did.** `log_text` sends the user's words and current inventory to
+  DeepSeek V4 Pro (`parseActivity`); only high-confidence, unambiguous parses change inventory.
 - **Verified in production:** an authenticated receipt import on the Vultr demo made 7 Crusoe calls
   (DeepSeek V4 Flash), all valid, none falling back.
 
@@ -121,10 +126,16 @@ docker/, Dockerfile, docker-compose.yml   Container build and local stack
 ## MCP tools
 
 `whoami` · `submit_observation` · `resolve_proposal` · `undo` · `upsert_food` ·
-`get_household_summary` · `search_inventory` · `get_item`
+`get_household_summary` · `search_inventory` · `get_item` ·
+`log_activity` · `log_text` · `correct_item` · `get_changes`
 
 `submit_observation` returns the receipt's verdict, the lines worth a glance and the next step for
 the agent, so most receipts are confirmed in conversation rather than on a screen.
+
+`log_activity` records what the user did (used, finished, discarded, froze, thawed, opened,
+moved, bought) and applies it immediately with undo. `log_text` takes the user's exact words and
+lets Crusoe parse them: a confident parse is applied, anything uncertain comes back for a quick
+confirmation in chat, and nothing is guessed.
 
 Every state-changing call takes an `idempotency_key`. Retries are safe, and a re-sent receipt is
 detected as a duplicate instead of being counted twice.
@@ -159,9 +170,9 @@ tests, but naming and matching quality drop sharply.
 ## Testing
 
 ```sh
-npm test                        # 228 tests: domain 35, reasoning 94 (+2 live, skipped without a key), server 99
+npm test                        # 252 tests: domain 47, reasoning 94 (+2 live, skipped without a key), server 111
 npm run typecheck
-npm run e2e                     # 8 Playwright tests at a phone viewport
+npm run e2e                     # 10 Playwright tests at a phone viewport
 ```
 
 CI runs typecheck, tests and the web build on every pull request. Parallel worktrees can use

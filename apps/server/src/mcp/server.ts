@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AppDeps } from '../http/app';
 import type { Principal } from '../identity/principal';
 import { MCP_INSTRUCTIONS } from './instructions';
+import { registerActivityTools } from './tools/activity';
 import { registerFoodTools } from './tools/foods';
 import { registerInventoryTools } from './tools/inventory';
 import { registerObservationTools } from './tools/observations';
@@ -13,5 +14,6 @@ export function buildMcpServer(deps: AppDeps, p: Principal): McpServer {
   registerInventoryTools(server, deps, p);
   registerObservationTools(server, deps, p);
   registerFoodTools(server, deps, p);
+  registerActivityTools(server, deps, p);
   return server;
 }

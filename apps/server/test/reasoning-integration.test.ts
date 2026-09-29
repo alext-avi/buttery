@@ -60,6 +60,7 @@ describe('@buttery/reasoning through the server (fake provider, no credits)', ()
     const broken: ReasoningPort = {
       canonicalizeItems: async () => { throw new ReasoningInputError('canonicalizeItems', []); },
       estimateShelfLife: async () => { throw new ReasoningInputError('canonicalizeItems', []); },
+      parseActivity: async () => { throw new ReasoningInputError('parseActivity', []); },
     };
     await expect(submitReceipt(testDeps({ reasoning: broken }), principal, { kind: 'receipt', payload: receipt, idempotency_key: 'int-3' })).rejects.toBeInstanceOf(ReasoningInputError);
   });
