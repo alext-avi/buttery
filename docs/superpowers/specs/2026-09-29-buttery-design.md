@@ -41,7 +41,9 @@ reconciliation; pantry/fridge photo proposals; direct activity logging (bought, 
 used, finished, discarded, froze, thawed, opened, moved); use-soon view; recipe capture,
 editing and inventory-aware matching; shopping lists; compact state summary for fresh
 agent conversations; four web views (review, inventory, recipe, shopping list);
-household/member identity model.
+household/member identity model; **self-serve sign-up and onboarding** (create an account and
+household from the web, set household name/timezone, connect Claude via connector, mint and revoke
+access tokens for CLI agents) with a `SIGNUP_MODE=open|closed` switch.
 
 **Out (for now):** barcode scanning, nutrition/macros, meal-plan calendars, grocery-store
 APIs and price tracking, server-side image interpretation (stretch goal, Section 11), native
@@ -499,6 +501,13 @@ The item's evidence trail links to the reasoning call.
 ✅ Undo restores prior state; history shows both change sets.
 ✅ A fresh Claude conversation and a Codex task via agentdock both answer "what's expiring this week" using only the summary.
 ✅ A second receipt with the same items matches via learned aliases at high confidence.
+
+**Phase 1.5 — Self-serve sign-up.** AuthKit sign-up screen from the login page; first sign-in
+creates the user and household and lands on onboarding (`/settings?welcome=1`); household name and
+timezone; token self-service (create shown once, list, revoke); `SIGNUP_MODE=closed` refuses new
+identities only. Token creation is deliberately not idempotent so raw tokens are never stored.
+✅ A new person signs up, names the household, creates a token and calls `whoami` from Claude Code
+without operator help. ✅ A revoked token no longer authenticates.
 
 **Phase 2 — Activity, corrections, use-soon.** `log_activity`, `log_text` (Crusoe
 `parseActivity`), web quick log, `correct_item`, `get_attention`, `get_changes`,
