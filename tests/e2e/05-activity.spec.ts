@@ -45,8 +45,14 @@ test('finishing an item takes it off the inventory list', async ({ page }) => {
   await page.getByRole('button', { name: 'Finished' }).click();
   await expect(page.getByRole('status')).toContainText('used up');
   await expect(page.getByRole('button', { name: 'Finished' })).toHaveCount(0);
+  const itemUrl = page.url();
   await page.goto('/inventory');
   await expect(page.getByTestId('lot').filter({ hasText: 'Eggs' })).toHaveCount(0);
+  // A mistaken "Finished" can still be undone from the item's history.
+  await page.goto(itemUrl);
+  page.once('dialog', (d) => d.accept());
+  await page.getByRole('button', { name: 'Undo this change' }).first().click();
+  await expect(page.getByRole('button', { name: 'Finished' })).toBeVisible();
 });
 
 test('discarding asks first, then records it', async ({ page }) => {
@@ -59,4 +65,7 @@ test('discarding asks first, then records it', async ({ page }) => {
   page.once('dialog', (d) => d.accept());
   await page.getByRole('button', { name: 'Discard' }).click();
   await expect(page.getByRole('status')).toContainText('thrown away');
+  // The confirmation offers an immediate undo.
+  await page.getByRole('status').getByRole('button', { name: 'Undo' }).click();
+  await expect(page.getByRole('button', { name: 'Discard' })).toBeVisible();
 });

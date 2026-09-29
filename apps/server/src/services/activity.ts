@@ -32,7 +32,7 @@ import { AppError, notFound } from '../errors';
 import type { AppDeps } from '../http/app';
 import type { Principal } from '../identity/principal';
 import { createInterimReasoning } from '../reasoning/interim';
-import type { ParseActivityOutput, ReasoningResult, ShelfLifeOutput } from '../reasoning/port';
+import type { CanonicalizeOutput, ParseActivityOutput, ReasoningResult, ShelfLifeOutput } from '../reasoning/port';
 import { persistReasoningCall } from '../reasoning/record';
 import { addLot, createOrReuseFood, openChangeSet, recordChange, updateLot, type ChangeSetHandle } from './changes';
 import { defaultLocationFor } from './drafts';
@@ -48,10 +48,10 @@ const interim = createInterimReasoning();
 
 const ActivityQuantitySchema = z
   .object({
-    kind: z.enum(['exact', 'approx', 'unknown']).default('approx'),
+    kind: z.enum(['exact', 'approx', 'unknown']).optional().describe('Defaults to exact for an amount, approx for a fraction'),
     amount: z.number().nonnegative().optional(),
     unit: z.string().max(20).optional(),
-    fraction: z.number().min(0).max(1).optional().describe('Share of the item, e.g. 0.5 for "half"'),
+    fraction: z.number().min(0).max(1).optional().describe('Share of what is left, e.g. 0.5 for "half"'),
   })
   .describe('For "used": a share (fraction) or an amount with a unit. Omit if unknown.');
 
@@ -135,22 +135,29 @@ const side = (l: LotFacts & { expires?: LotRow['expires'] }, today: IsoDate): Si
   expiry_text: describeExpiry(l.expires ?? null, today),
 });
 
-function toAmount(q: ActivityItem['quantity']): AmountChange | undefined {
-  if (!q) return undefined;
-  if (q.fraction !== undefined) return { fraction: q.fraction };
-  if (q.amount === undefined) return undefined;
-  const unit = normalizeUnit(q.unit) ?? 'count';
-  return { quantity: { kind: q.kind, amount: q.amount, unit } };
+/** An agent-stated amount. An unrecognised unit never subtracts: the amount left becomes approximate. */
+function amountOf(q: ActivityItem['quantity']): { change?: AmountChange; note?: string } {
+  if (!q) return {};
+  if (q.fraction !== undefined) return { change: { fraction: q.fraction } };
+  if (q.amount === undefined) return {};
+  const unit = q.unit ? normalizeUnit(q.unit) : 'count';
+  if (!unit) return { change: { quantity: { kind: 'unknown' } }, note: `Buttery doesn't know the unit "${q.unit}", so the amount left is marked approximate.` };
+  return { change: { quantity: { kind: q.kind ?? 'exact', amount: q.amount, unit } } };
 }
 
-/** Foods a name could mean: exact/alias first, then containment and trigram similarity. */
+const tokens = (s: string) => normalizeName(s).split(' ').filter(Boolean).map((t) => (t.length > 3 && t.endsWith('s') ? t.slice(0, -1) : t));
+
+/** Foods a name could mean: exact/alias first, then whole-word containment, then close trigram matches. */
 function matchFoods(name: string, catalog: FoodRow[]): FoodRow[] {
   const exact = exactAliasMatch(name, catalog);
   if (exact) return [exact];
-  const n = normalizeName(name);
-  const containing = catalog.filter((f) => f.normalizedName.includes(n) || n.includes(f.normalizedName));
+  const q = tokens(name);
+  const containing = catalog.filter((f) => {
+    const ft = tokens(f.name);
+    return q.every((t) => ft.includes(t)) || ft.every((t) => q.includes(t));
+  });
   if (containing.length) return containing;
-  return shortlist(name, catalog, 5, 0.35);
+  return shortlist(name, catalog, 5, 0.5);
 }
 
 async function estimate(deps: Deps, householdId: string, food: { name: string; category: string | null; perishability: FoodRow['perishability'] }, states: LotState[]) {
@@ -183,8 +190,8 @@ type Prepared = {
   steps: Step[];
   unresolved: Unresolved[];
   assumptions: string[];
-  foodUpdates: Map<string, { before: FoodRow; shelfLife: ShelfLifeMap }>;
-  newFoodShelfLife: Map<string, ShelfLifeMap>;
+  foodUpdates: Map<string, { before: FoodRow; shelfLife: ShelfLifeMap; added: ShelfLifeMap }>;
+  newFoods: Map<string, { name: string; category: string | null; perishability: FoodRow['perishability']; shelfLife: ShelfLifeMap }>;
   calls: Array<{ id: string; result: ReasoningResult<unknown> }>;
 };
 
@@ -198,21 +205,27 @@ async function prepare(deps: Deps, p: Principal, activities: Activity[], now: Da
   const catalog = await deps.db.select().from(foods).where(and(eq(foods.householdId, p.householdId), isNull(foods.archivedAt)));
   const rows = await activeRows(deps.db, p.householdId);
   const current = new Map<string, LotFacts & { expires: LotRow['expires'] }>(); // evolving state when one call touches a lot twice
-  const out: Prepared = { today, steps: [], unresolved: [], assumptions: [], foodUpdates: new Map(), newFoodShelfLife: new Map(), calls: [] };
+  const out: Prepared = { today, steps: [], unresolved: [], assumptions: [], foodUpdates: new Map(), newFoods: new Map(), calls: [] };
   const shelfLifeOf = (f: FoodRow) => out.foodUpdates.get(f.id)?.shelfLife ?? f.shelfLife;
   const candidatesFor = (rs: ActiveRow[]) => rs.slice(0, 5).map((r) => ({ lot_id: r.lot.id, food_name: r.food.name, location: r.lot.location, quantity_text: describeQuantity(r.lot.quantity, r.lot.package) }));
 
   for (const act of activities) {
     for (const item of act.items) {
       if (act.kind === 'bought') {
-        const [food] = item.food_name ? matchFoods(item.food_name, catalog) : [];
-        const q = toAmount(item.quantity);
+        const exact = item.food_name ? exactAliasMatch(item.food_name, catalog) : undefined;
+        const loose = exact ? [] : item.food_name ? matchFoods(item.food_name, catalog) : [];
+        if (!exact && loose.length > 1) {
+          out.unresolved.push({ kind: 'bought', food_name: item.food_name ?? null, lot_id: null, reason: `"${item.food_name}" could mean several foods.`, candidates: [] });
+          continue;
+        }
+        const food = exact ?? loose[0];
+        const { change } = amountOf(item.quantity);
         out.steps.push({
           type: 'add',
           kind: 'bought',
           food: food ?? null,
-          newFoodName: food ? null : sentence(item.food_name ?? 'Item'),
-          quantity: q && 'quantity' in q ? q.quantity : { kind: 'approx', amount: 1, unit: 'count' },
+          newFoodName: food ? null : item.food_name ?? 'item',
+          quantity: change && 'quantity' in change && change.quantity.kind !== 'unknown' ? change.quantity : { kind: 'approx', amount: 1, unit: 'count' },
           location: item.to_location ?? null,
         });
         continue;
@@ -226,7 +239,8 @@ async function prepare(deps: Deps, p: Principal, activities: Activity[], now: Da
         }
       } else {
         const matches = matchFoods(item.food_name!, catalog);
-        const onHand = rows.filter((r) => matches.some((f) => f.id === r.food.id));
+        // Skip items already used up earlier in this same call.
+        const onHand = rows.filter((r) => matches.some((f) => f.id === r.food.id) && (current.get(r.lot.id)?.status ?? r.lot.status) === 'active');
         const foodsOnHand = [...new Set(onHand.map((r) => r.food.id))];
         if (!onHand.length) {
           out.unresolved.push({ kind: act.kind, food_name: item.food_name!, lot_id: null, reason: `No ${item.food_name} on hand.`, candidates: candidatesFor(rows.filter((r) => shortlist(item.food_name!, [r.food], 1, 0.2).length)) });
@@ -236,15 +250,20 @@ async function prepare(deps: Deps, p: Principal, activities: Activity[], now: Da
           out.unresolved.push({ kind: act.kind, food_name: item.food_name!, lot_id: null, reason: `"${item.food_name}" could mean several foods.`, candidates: candidatesFor(onHand) });
           continue;
         }
-        target = pickLot(onHand.map((r) => ({ ...r, expires: current.get(r.lot.id)?.expires ?? r.lot.expires, acquiredOn: r.lot.acquiredOn })));
-        if (onHand.length > 1) {
-          const exp = describeExpiry(target!.lot.expires, today);
-          out.assumptions.push(`You have ${onHand.length} on hand of ${target!.food.name}; used the one expiring first (${exp}, ${target!.lot.location}).`);
+        // Only items this action can apply to (thaw → frozen ones, open → sealed ones, …), then the spec rule.
+        const withState = onHand.map((r) => ({ ...r, state: current.get(r.lot.id) ?? { ...facts(r.lot), expires: r.lot.expires } }));
+        const eligible = withState.filter((r) => !applyActivity(r.state, { kind: act.kind as Exclude<ActivityKind, 'bought'>, ...(item.to_location ? { toLocation: item.to_location } : {}) }, { perishability: r.food.perishability, shelfLife: shelfLifeOf(r.food) }, today).refused);
+        const pool = eligible.length ? eligible : withState;
+        target = pickLot(pool.map((r) => ({ ...r, expires: r.state.expires, acquiredOn: r.lot.acquiredOn })));
+        if (onHand.length > 1 && eligible.length) {
+          const t = withState.find((r) => r.lot.id === target!.lot.id)!;
+          out.assumptions.push(`You have ${onHand.length} on hand of ${target!.food.name}; used the one expiring first (${describeExpiry(t.state.expires, today)}, ${t.state.location}).`);
         }
       }
       const { lot, food } = target!;
       const state = current.get(lot.id) ?? { ...facts(lot), expires: lot.expires };
-      let r = applyActivity(state, { kind: act.kind, amount: toAmount(item.quantity), ...(item.to_location ? { toLocation: item.to_location } : {}) }, { perishability: food.perishability, shelfLife: shelfLifeOf(food) }, today);
+      const amount = amountOf(item.quantity);
+      let r = applyActivity(state, { kind: act.kind, ...(amount.change ? { amount: amount.change } : {}), ...(item.to_location ? { toLocation: item.to_location } : {}) }, { perishability: food.perishability, shelfLife: shelfLifeOf(food) }, today);
       if (r.refused) {
         out.unresolved.push({ kind: act.kind, food_name: food.name, lot_id: lot.id, reason: `${food.name}: ${r.refused}`, candidates: [] });
         continue;
@@ -252,19 +271,33 @@ async function prepare(deps: Deps, p: Principal, activities: Activity[], now: Da
       if (r.needsShelfLife) {
         const est = await estimate(deps, p.householdId, food, [r.needsShelfLife]);
         out.calls.push({ id: est.id, result: est.result });
-        out.foodUpdates.set(food.id, { before: food, shelfLife: { ...shelfLifeOf(food), ...est.map } });
-        r = applyActivity(state, { kind: act.kind, amount: toAmount(item.quantity), ...(item.to_location ? { toLocation: item.to_location } : {}) }, { perishability: food.perishability, shelfLife: shelfLifeOf(food) }, today);
+        out.foodUpdates.set(food.id, { before: food, shelfLife: { ...shelfLifeOf(food), ...est.map }, added: { ...(out.foodUpdates.get(food.id)?.added ?? {}), ...est.map } });
+        r = applyActivity(state, { kind: act.kind, ...(amount.change ? { amount: amount.change } : {}), ...(item.to_location ? { toLocation: item.to_location } : {}) }, { perishability: food.perishability, shelfLife: shelfLifeOf(food) }, today);
       }
       current.set(lot.id, r.lot);
-      out.steps.push({ type: 'update', kind: act.kind, lot, food, next: r.lot, notes: r.notes });
+      out.steps.push({ type: 'update', kind: act.kind, lot, food, next: r.lot, notes: [...(amount.note ? [amount.note] : []), ...r.notes] });
     }
   }
 
-  for (const s of out.steps) {
-    if (s.type === 'add' && s.newFoodName && !out.newFoodShelfLife.has(s.newFoodName)) {
-      const est = await estimate(deps, p.householdId, { name: s.newFoodName, category: null, perishability: 'perishable' }, ['sealed', 'opened', 'frozen']);
+  // New foods bought without a receipt: classify them on Crusoe (one call), then estimate shelf life.
+  const newNames = [...new Set(out.steps.flatMap((s) => (s.type === 'add' && s.newFoodName ? [s.newFoodName] : [])))];
+  if (newNames.length) {
+    const input = { lines: newNames.map((raw, i) => ({ line_id: `N${i + 1}`, raw_text: raw, line_kind: 'item' as const })), candidates: {} };
+    let canon: ReasoningResult<CanonicalizeOutput>;
+    try {
+      canon = await deps.reasoning.canonicalizeItems(input, { householdId: p.householdId });
+    } catch (err) {
+      if (err instanceof ReasoningInputError) throw err;
+      canon = await interim.canonicalizeItems(input);
+    }
+    out.calls.push({ id: randomUUID(), result: canon });
+    for (const [i, raw] of newNames.entries()) {
+      const c = canon.output.lines.find((l) => l.line_id === `N${i + 1}`);
+      const name = c?.canonical_name?.trim() || sentence(raw);
+      const info = { name, category: c?.category ?? null, perishability: c?.perishability ?? ('perishable' as const) };
+      const est = await estimate(deps, p.householdId, info, ['sealed', 'opened', 'frozen']);
       out.calls.push({ id: est.id, result: est.result });
-      out.newFoodShelfLife.set(s.newFoodName, est.map);
+      out.newFoods.set(raw, { ...info, shelfLife: est.map });
     }
   }
   return out;
@@ -303,15 +336,20 @@ async function commit(tx: Tx, deps: Deps, p: Principal, prep: Prepared, payload:
   const cs: ChangeSetHandle = await openChangeSet(tx, p, { label, causeObservationId: observationId, idempotencyKey });
 
   for (const [foodId, u] of prep.foodUpdates) {
-    const [after] = await tx.update(foods).set({ shelfLife: u.shelfLife, updatedAt: new Date() }).where(eq(foods.id, foodId)).returning();
-    await recordChange(tx, cs, { op: 'update_food', foodId, before: u.before, after });
+    // Merge only the newly estimated states into the food as it is now, not the copy read before the model call.
+    const [fresh] = await tx.select().from(foods).where(eq(foods.id, foodId)).for('update');
+    const [after] = await tx.update(foods).set({ shelfLife: { ...u.added, ...fresh!.shelfLife }, updatedAt: new Date() }).where(eq(foods.id, foodId)).returning();
+    await recordChange(tx, cs, { op: 'update_food', foodId, before: fresh, after });
   }
 
   const applied: AppliedStep[] = [];
   const fresh = new Map<string, LotRow>();
   for (const step of prep.steps) {
     if (step.type === 'add') {
-      const food = step.food ?? (await createOrReuseFood(tx, cs, { name: step.newFoodName!, perishability: 'perishable', shelfLife: prep.newFoodShelfLife.get(step.newFoodName!) ?? {} })).food;
+      const nf = step.newFoodName ? prep.newFoods.get(step.newFoodName) : undefined;
+      const food =
+        step.food ??
+        (await createOrReuseFood(tx, cs, { name: nf?.name ?? step.newFoodName!, category: nf?.category ?? null, perishability: nf?.perishability ?? 'perishable', shelfLife: nf?.shelfLife ?? {}, defaultLocation: defaultLocationFor(nf?.perishability ?? 'perishable') })).food;
       const location = step.location ?? food.defaultLocation ?? defaultLocationFor(food.perishability);
       const lot = await addLot(tx, cs, { food, location, quantity: step.quantity, acquiredOn: prep.today, evidenceObservationId: observationId });
       const after = side({ ...facts(lot), expires: lot.expires }, prep.today);
@@ -363,7 +401,7 @@ export async function logActivity(deps: Deps, p: Principal, raw: LogActivityInpu
 type Interpretation = Array<{ kind: string; items: Array<{ lot_id: string | null; food_name: string | null; location: string | null; quantity_text: string | null; quantity: ActivityItem['quantity'] | null; to_location: string | null }> }>;
 export type LogTextResult =
   | (ActivityResult & { status: 'applied'; confidence: string; interpretation: Interpretation; ambiguities: ParseActivityOutput['ambiguities'] })
-  | { status: 'needs_confirmation'; change_set_id: null; confidence: string; interpretation: Interpretation; ambiguities: ParseActivityOutput['ambiguities']; next: string[] };
+  | { status: 'needs_confirmation'; change_set_id: null; confidence: string; interpretation: Interpretation; ambiguities: ParseActivityOutput['ambiguities']; unresolved: Unresolved[]; next: string[] };
 
 export async function logText(deps: Deps, p: Principal, raw: z.input<typeof LogTextInputSchema>, now = new Date()): Promise<LogTextResult> {
   const input = LogTextInputSchema.parse(raw);
@@ -388,10 +426,17 @@ export async function logText(deps: Deps, p: Principal, raw: z.input<typeof LogT
   const callId = randomUUID();
   const out = parsed.output;
   const ambiguities = [...out.ambiguities];
-  const supported = out.activities.filter((a) => {
-    if (a.kind === 'cooked') ambiguities.push({ text: input.text, reason: "Logging a cooked recipe isn't supported yet; say what was used instead.", candidate_lot_ids: [] });
-    return a.kind !== 'cooked';
-  }) as Activity[];
+  const supported: Activity[] = [];
+  for (const a of out.activities) {
+    if (a.kind === 'cooked') {
+      ambiguities.push({ text: input.text, reason: "Logging a cooked recipe isn't supported yet; say what was used instead.", candidate_lot_ids: [] });
+      continue;
+    }
+    // Model output is validated like agent input; an item it can't name is a question, not a crash.
+    const items = a.items.filter((i) => ActivityItemSchema.safeParse(i).success) as ActivityItem[];
+    if (items.length < a.items.length) ambiguities.push({ text: input.text, reason: `Couldn't tell which item was meant for "${a.kind}".`, candidate_lot_ids: [] });
+    if (items.length) supported.push({ kind: a.kind, items });
+  }
   const byLot = new Map(rows.map((r) => [r.lot.id, r]));
   const interpretation: Interpretation = supported.map((a) => ({
     kind: a.kind,
@@ -408,10 +453,12 @@ export async function logText(deps: Deps, p: Principal, raw: z.input<typeof LogT
     }),
   }));
   const payload = { source: 'log_text', text: input.text, parsed: out, reasoning_call_id: callId };
-  const confident = out.confidence === 'high' && ambiguities.length === 0 && supported.length > 0;
+  const modelConfident = out.confidence === 'high' && ambiguities.length === 0 && supported.length > 0;
+  // The server must also resolve every item; otherwise ask, don't half-apply.
+  const prep = modelConfident ? await prepare(deps, p, supported, now) : null;
+  const confident = Boolean(prep && prep.unresolved.length === 0 && prep.steps.length > 0);
 
-  if (confident) {
-    const prep = await prepare(deps, p, supported, now);
+  if (confident && prep) {
     prep.calls.unshift({ id: callId, result: parsed });
     return runIdempotent(deps.db, scope, async (tx) => ({
       ...(await commit(tx, deps, p, prep, payload, now, input.idempotency_key)),
@@ -423,13 +470,15 @@ export async function logText(deps: Deps, p: Principal, raw: z.input<typeof LogT
   }
   return runIdempotent(deps.db, scope, async (tx) => {
     await persistReasoningCall(tx, p.householdId, callId, parsed);
-    await tx.insert(observations).values({ householdId: p.householdId, kind: 'user_statement', observedAt: now, actorUserId: p.userId, connectionId: p.connectionId, payload, status: 'open' });
+    // Kept as evidence; confirmation happens in chat and is recorded by the follow-up log_activity.
+    await tx.insert(observations).values({ householdId: p.householdId, kind: 'user_statement', observedAt: now, actorUserId: p.userId, connectionId: p.connectionId, payload, status: 'resolved' });
     return {
       status: 'needs_confirmation' as const,
       change_set_id: null,
       confidence: out.confidence,
       interpretation,
       ambiguities,
+      unresolved: prep?.unresolved ?? [],
       next: [
         'Nothing was changed. Read the interpretation back to the user in plain words and ask them to confirm or clarify the ambiguities. Then call log_activity with explicit lot_ids.',
       ],
@@ -440,42 +489,73 @@ export async function logText(deps: Deps, p: Principal, raw: z.input<typeof LogT
 export async function correctItem(deps: Deps, p: Principal, raw: z.input<typeof CorrectItemInputSchema>, now = new Date()) {
   const input = CorrectItemInputSchema.parse(raw);
   const { idempotency_key, ...request } = input;
+  const scope = { householdId: p.householdId, tool: 'correct_item', key: idempotency_key, request };
+  const prior = await findIdempotent<Awaited<ReturnType<typeof correctItemResult>>>(deps.db, scope);
+  if (prior) return prior;
   const links = makeLinks(deps.config.PUBLIC_BASE_URL);
   const household = await getHousehold(deps.db, p.householdId);
   const today = todayIn(household.timezone, now);
-  return runIdempotent(deps.db, { householdId: p.householdId, tool: 'correct_item', key: idempotency_key, request }, async (tx) => {
-    const [row] = await tx.select({ lot: lots, food: foods }).from(lots).innerJoin(foods, eq(foods.id, lots.foodId)).where(and(eq(lots.id, input.lot_id), eq(lots.householdId, p.householdId))).for('update');
-    if (!row) throw notFound('Item');
-    const { lot, food } = row;
-    const state = input.state ?? lot.state;
-    const anchors = {
-      openedOn: state === 'opened' && !lot.openedOn ? today : lot.openedOn,
-      frozenOn: state === 'frozen' && !lot.frozenOn ? today : lot.frozenOn,
-      thawedOn: state === 'thawed' && !lot.thawedOn ? today : lot.thawedOn,
-    };
-    const printedExpiryOn = input.expires_on !== undefined ? input.expires_on : lot.printedExpiryOn;
-    const expires = computeEffectiveExpiry({
-      perishability: food.perishability,
-      state,
-      anchors: { sealed: lot.acquiredOn ?? undefined, opened: anchors.openedOn ?? undefined, frozen: anchors.frozenOn ?? undefined, thawed: anchors.thawedOn ?? undefined },
-      printedExpiryOn,
-      shelfLife: food.shelfLife,
-    });
-    const observationId = randomUUID();
-    await tx.insert(observations).values({ id: observationId, householdId: p.householdId, kind: 'user_statement', observedAt: now, actorUserId: p.userId, connectionId: p.connectionId, payload: { source: 'correct_item', ...request }, status: 'resolved' });
-    const cs = await openChangeSet(tx, p, { label: `Corrected ${food.name}`, causeObservationId: observationId, idempotencyKey: idempotency_key });
-    const after = await updateLot(tx, cs, lot, {
-      state,
-      ...anchors,
-      ...(input.quantity ? { quantity: input.quantity } : {}),
-      ...(input.location ? { location: input.location } : {}),
-      printedExpiryOn,
-      expires,
-      lastEvidenceAt: now,
-      lastEvidenceObservationId: observationId,
-    }, observationId);
-    return { change_set_id: cs.id, lot: toLotView(after, food, today, links, now), undo: { change_set_id: cs.id } };
+  const [pre] = await deps.db.select({ lot: lots, food: foods }).from(lots).innerJoin(foods, eq(foods.id, lots.foodId)).where(and(eq(lots.id, input.lot_id), eq(lots.householdId, p.householdId)));
+  if (!pre) throw notFound('Item');
+  // A state change to one the food has no estimate for gets one from Crusoe (outside the transaction).
+  const newState = input.state && input.state !== pre.lot.state ? input.state : null;
+  const est = newState && newState !== 'sealed' && !pre.food.shelfLife[newState] ? await estimate(deps, p.householdId, pre.food, [newState]) : null;
+  return runIdempotent(deps.db, scope, (tx) => correctItemResult(tx, p, input, { links, today, now, est }));
+}
+
+async function correctItemResult(
+  tx: Tx,
+  p: Principal,
+  input: z.infer<typeof CorrectItemInputSchema>,
+  ctx: { links: ReturnType<typeof makeLinks>; today: IsoDate; now: Date; est: Awaited<ReturnType<typeof estimate>> | null },
+) {
+  const { idempotency_key, ...request } = input;
+  const { today, now } = ctx;
+  const [row] = await tx.select({ lot: lots, food: foods }).from(lots).innerJoin(foods, eq(foods.id, lots.foodId)).where(and(eq(lots.id, input.lot_id), eq(lots.householdId, p.householdId))).for('update');
+  if (!row) throw notFound('Item');
+  const { lot } = row;
+  let { food } = row;
+  if (lot.status === 'voided') throw new AppError('not_active', 'This item was removed from inventory; undo that change instead.', 409);
+  const revives = Boolean(input.quantity && (input.quantity.kind !== 'exact' || (input.quantity.amount ?? 0) > 0));
+  if (lot.status !== 'active' && !revives) {
+    throw new AppError('not_active', 'This item is used up or thrown away. Give an amount to bring it back.', 409);
+  }
+  const state = input.state ?? lot.state;
+  const moved = input.location ?? (state !== lot.state && state === 'frozen' ? 'freezer' : state !== lot.state && state === 'thawed' ? 'fridge' : undefined);
+  const anchors = {
+    openedOn: state === 'opened' && !lot.openedOn ? today : lot.openedOn,
+    frozenOn: state === 'frozen' && !lot.frozenOn ? today : lot.frozenOn,
+    thawedOn: state === 'thawed' && !lot.thawedOn ? today : lot.thawedOn,
+  };
+  const observationId = randomUUID();
+  await tx.insert(observations).values({ id: observationId, householdId: p.householdId, kind: 'user_statement', observedAt: now, actorUserId: p.userId, connectionId: p.connectionId, payload: { source: 'correct_item', ...request }, status: 'resolved' });
+  const cs = await openChangeSet(tx, p, { label: `Corrected ${food.name}`, causeObservationId: observationId, idempotencyKey: idempotency_key });
+  if (ctx.est) {
+    await persistReasoningCall(tx, p.householdId, ctx.est.id, ctx.est.result);
+    const [after] = await tx.update(foods).set({ shelfLife: { ...ctx.est.map, ...food.shelfLife }, updatedAt: new Date() }).where(eq(foods.id, food.id)).returning();
+    await recordChange(tx, cs, { op: 'update_food', foodId: food.id, before: food, after });
+    food = after!;
+  }
+  const printedExpiryOn = input.expires_on !== undefined ? input.expires_on : lot.printedExpiryOn;
+  const expires = computeEffectiveExpiry({
+    perishability: food.perishability,
+    state,
+    anchors: { sealed: lot.acquiredOn ?? undefined, opened: anchors.openedOn ?? undefined, frozen: anchors.frozenOn ?? undefined, thawed: anchors.thawedOn ?? undefined },
+    printedExpiryOn,
+    shelfLife: food.shelfLife,
   });
+  const after = await updateLot(tx, cs, lot, {
+    state,
+    ...anchors,
+    ...(input.quantity ? { quantity: input.quantity } : {}),
+    ...(moved ? { location: moved } : {}),
+    ...(revives && lot.status !== 'active' ? { status: 'active' as const } : {}),
+    printedExpiryOn,
+    expires,
+    lastEvidenceAt: now,
+    lastEvidenceObservationId: observationId,
+  }, observationId);
+  return { change_set_id: cs.id, lot: toLotView(after, food, today, ctx.links, now), undo: { change_set_id: cs.id } };
 }
 
 export async function getChanges(deps: Deps, p: Principal, raw: z.input<typeof GetChangesInputSchema>, now = new Date()) {

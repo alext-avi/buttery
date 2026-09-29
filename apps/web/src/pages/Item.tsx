@@ -25,6 +25,7 @@ export function Item() {
   const { data, error, loading, reload } = useLoad(() => api.item(lotId), [lotId]);
   const undoKey = useRef(newKey());
   const [moveTo, setMoveTo] = useState('');
+  const [lastChange, setLastChange] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -39,10 +40,26 @@ export function Item() {
     try {
       const r = await api.itemActivity(l.lot_id, { kind, ...extra, idempotency_key: newKey() });
       setMessage(r.applied.length ? DONE[kind](extra.to_location) : r.unresolved[0]?.reason ?? 'Nothing changed.');
+      setLastChange(r.change_set_id);
       setMoveTo('');
       reload();
     } catch (e) {
       setMessage(e instanceof ApiError ? e.message : 'Could not update. Try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function undoLast() {
+    if (!lastChange) return;
+    setBusy(true);
+    try {
+      await api.undo(lastChange, newKey());
+      setMessage('Undone.');
+      setLastChange(null);
+      reload();
+    } catch (e) {
+      setMessage(e instanceof ApiError ? e.message : 'Could not undo. Try again.');
     } finally {
       setBusy(false);
     }
@@ -77,7 +94,12 @@ export function Item() {
       </header>
       {message && (
         <div className="banner" role="status">
-          {message}
+          {message}{' '}
+          {lastChange && (
+            <button className="link" onClick={undoLast} disabled={busy}>
+              Undo
+            </button>
+          )}
         </div>
       )}
 
@@ -162,8 +184,8 @@ export function Item() {
 
       <h2>History</h2>
       <ul className="cards">
-        {data.history.map((h) => (
-          <li className="card" key={`${h.change_set_id}-${h.op}`}>
+        {data.history.map((h, i) => (
+          <li className="card" key={`${h.change_set_id}-${h.op}-${i}`}>
             <div className="title-row">
               <strong>
                 {h.op === 'update_lot' ? h.label : OP_LABEL[h.op] ?? cap(h.op.replace(/_/g, ' '))}
@@ -176,7 +198,7 @@ export function Item() {
               {when(h.at)} · {h.by ?? 'someone'}
               {h.via && h.via !== 'Web' ? ` via ${h.via}` : ''}
             </div>
-            {!h.undone && !h.is_undo && l.status === 'active' && (
+            {!h.undone && !h.is_undo && l.status !== 'voided' && (
               <div className="actions">
                 <button onClick={() => undo(h.change_set_id, h.label)} disabled={busy}>
                   {isReceipt(h.label) ? 'Undo this receipt' : 'Undo this change'}

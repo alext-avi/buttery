@@ -170,9 +170,9 @@ tests, but naming and matching quality drop sharply.
 ## Testing
 
 ```sh
-npm test                        # 252 tests: domain 47, reasoning 94 (+2 live, skipped without a key), server 111
+npm test                        # 305 tests: domain 68, reasoning 94 (+2 live, skipped without a key), server 143
 npm run typecheck
-npm run e2e                     # 10 Playwright tests at a phone viewport
+npm run e2e                     # 13 Playwright tests at a phone viewport
 ```
 
 CI runs typecheck, tests and the web build on every pull request. Parallel worktrees can use
