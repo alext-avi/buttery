@@ -37,7 +37,7 @@ export const ReceiptPayloadSchema = z.object({
   lines: z.array(ReceiptLineSchema).min(1).max(200).describe('Every printed line, in order'),
 });
 export type ReceiptPayload = z.infer<typeof ReceiptPayloadSchema>;
-export type ReceiptPayloadWithIds = ReceiptPayload & { lines: Array<ReceiptLine & { line_id: string }> };
+export type ReceiptPayloadWithIds = Omit<ReceiptPayload, 'lines'> & { lines: Array<ReceiptLine & { line_id: string }> };
 
 export function withLineIds(p: ReceiptPayload): ReceiptPayloadWithIds {
   const used = new Set(p.lines.map((l) => l.line_id).filter(Boolean));
