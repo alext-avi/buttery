@@ -29,7 +29,11 @@ export function Review() {
   };
   const open = data.ops.filter((o) => !o.applied);
   const lotOps = data.ops.filter((o) => o.op === 'add_lot');
-  const needsLook = lotOps.filter((o) => !o.applied && o.confidence === 'low');
+  // Follow the verdict: every open line that isn't high confidence needs a look, low confidence first.
+  const toCheck = new Set((data.lines_to_check ?? []).map((l) => l.op_id));
+  const needsLook = lotOps
+    .filter((o) => !o.applied && toCheck.has(o.op_id))
+    .sort((a, b) => (a.confidence === 'low' ? 0 : 1) - (b.confidence === 'low' ? 0 : 1));
   const others = lotOps.filter((o) => !needsLook.includes(o));
   const ignored = data.ops.filter((o) => o.op === 'ignore_line');
   const openLots = open.filter((o) => o.op === 'add_lot').length;
@@ -78,7 +82,9 @@ export function Review() {
   }
 
   const duplicate = data.observation.possible_duplicate_of;
-  const needsDuplicateConfirm = Boolean(duplicate) && open.some((o) => o.op === 'add_lot') && !notDuplicate;
+  const duplicateActive = Boolean(duplicate) && open.some((o) => o.op === 'add_lot');
+  const needsDuplicateConfirm = duplicateActive && !notDuplicate;
+  const otherReasons = (data.verdict?.reasons ?? []).filter((r) => !r.startsWith('May duplicate'));
   const otherNotes = data.observation.uncertainties.filter((u) => !u.includes('already recorded'));
 
   const card = (o: OpView) => <OpCard key={o.op_id} op={o} today={data.today} choice={choiceFor(o)} onChange={o.applied ? undefined : setChoice(o.op_id)} />;
@@ -100,8 +106,8 @@ export function Review() {
           <b>{data.counts.lines}</b>
           <span>on receipt</span>
         </div>
-        <div className={`stat${needsLook.length > 0 ? ' warn' : ''}`}>
-          <b>{needsLook.length}</b>
+        <div className={`stat${toCheck.size > 0 ? ' warn' : ''}`} data-testid="stat-to-check">
+          <b>{toCheck.size}</b>
           <span>to check</span>
         </div>
         <div className="stat">
@@ -127,7 +133,7 @@ export function Review() {
           This receipt is done. <Link to="/inventory">View inventory</Link>
         </div>
       )}
-      {data.verdict && !result && (
+      {data.verdict && !result && !duplicateActive && (
         <div className={`banner ${data.verdict.verdict === 'safe_to_apply' ? 'ok' : data.verdict.verdict === 'quick_check' ? '' : 'warn'}`} data-testid="verdict">
           <strong>
             {data.verdict.verdict === 'safe_to_apply' ? 'Looks right.' : data.verdict.verdict === 'quick_check' ? 'Mostly confident.' : 'Needs a review.'}
@@ -145,11 +151,12 @@ export function Review() {
           {actionError}
         </div>
       )}
-      {duplicate && open.some((o) => o.op === 'add_lot') && (
+      {duplicate && duplicateActive && (
         <div className="banner warn" role="alert">
           <strong>This receipt may already be recorded.</strong> Another receipt from the same store and day has the same total or
           nearly the same lines. Applying both would count these items twice.{' '}
           {duplicate.review_url && <Link to={new URL(duplicate.review_url).pathname}>Open the earlier receipt</Link>}
+          {otherReasons.length > 0 && <div className="small">Also: {otherReasons.join(' · ')}.</div>}
           <label className="check">
             <input type="checkbox" checked={notDuplicate} onChange={(e) => setNotDuplicate(e.target.checked)} /> This is a different purchase
           </label>

@@ -12,6 +12,9 @@ test.describe.serial('receipt review on a phone', () => {
     await expect(page.getByText('GRK YOGURT 2X32 OZ')).toBeVisible();
     // The verdict tells the user how much attention this receipt needs.
     await expect(page.getByTestId('verdict')).toContainText('worth a glance');
+    // The page follows the verdict: every line that isn't high confidence is counted and marked.
+    await expect(page.getByTestId('stat-to-check')).toContainText('6');
+    await expect(page.getByTestId('op').filter({ hasText: 'WHOLE MILK 1 GAL' })).toContainText('Worth a glance');
     await expect(page.getByText('shared by Alex via Claude iOS')).toBeVisible();
     // Estimated expiry reads as plain language, without model or confidence jargon.
     const chicken = page.getByTestId('op').filter({ hasText: 'CHKN BREAST 3 LB' });

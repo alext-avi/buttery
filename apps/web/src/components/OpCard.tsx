@@ -23,7 +23,9 @@ export function OpCard({ op, today, choice, onChange }: { op: OpView; today: str
           {op.line.raw_text}
           {op.line.price_cents !== undefined && <span>{money(op.line.price_cents)}</span>}
         </div>
-        <div className="meta">{op.reason}</div>
+        <div className="meta">
+          {op.reason} {!op.applied && <ConfidenceBadge value={op.confidence} />}
+        </div>
       </li>
     );
   }

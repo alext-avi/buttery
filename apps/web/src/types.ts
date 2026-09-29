@@ -47,6 +47,7 @@ export type ProposalView = {
   ops: OpView[];
   counts: { lines: number; items: number; pending: number; applied: number; low_confidence: number };
   verdict: Verdict | null;
+  lines_to_check: Array<{ op_id: string; kind: 'item' | 'skipped'; raw_text: string; food_name: string | null; confidence: Confidence; rationale: string | null }>;
   links: { review: string; inventory: string };
 };
 
