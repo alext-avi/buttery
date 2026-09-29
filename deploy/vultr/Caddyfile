@@ -1,0 +1,11 @@
+# Automatic HTTPS (Let's Encrypt) for the demo hostname, forwarding to the app on loopback.
+{$DEMO_HOST} {
+	encode zstd gzip
+	reverse_proxy {$DEMO_UPSTREAM} {
+		# MCP Streamable HTTP may stream responses: never buffer, no short timeout.
+		flush_interval -1
+		transport http {
+			read_timeout 10m
+		}
+	}
+}

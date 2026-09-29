@@ -127,6 +127,19 @@ export function Review() {
           This receipt is done. <Link to="/inventory">View inventory</Link>
         </div>
       )}
+      {data.verdict && !result && (
+        <div className={`banner ${data.verdict.verdict === 'safe_to_apply' ? 'ok' : data.verdict.verdict === 'quick_check' ? '' : 'warn'}`} data-testid="verdict">
+          <strong>
+            {data.verdict.verdict === 'safe_to_apply' ? 'Looks right.' : data.verdict.verdict === 'quick_check' ? 'Mostly confident.' : 'Needs a review.'}
+          </strong>{' '}
+          {data.verdict.reasons.join(' · ')}.{' '}
+          {data.verdict.verdict === 'safe_to_apply'
+            ? 'You can add everything.'
+            : data.verdict.verdict === 'quick_check'
+              ? 'Check the marked lines, then add.'
+              : 'Look through the lines below before adding.'}
+        </div>
+      )}
       {actionError && (
         <div className="banner error" role="alert">
           {actionError}

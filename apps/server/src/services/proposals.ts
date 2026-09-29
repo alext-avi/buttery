@@ -12,6 +12,7 @@ import { getHousehold } from './identity';
 import { runIdempotent } from './idempotency';
 import { makeLinks } from './links';
 import { refreshProposalStatus } from './proposalStatus';
+import { verdictFor, type LineToCheck } from './verdict';
 
 type Deps = Pick<AppDeps, 'db' | 'config'>;
 
@@ -78,6 +79,8 @@ export type ProposalView = {
   };
   ops: OpView[];
   counts: ReturnType<typeof countOps>;
+  verdict: ReturnType<typeof verdictFor>['verdict'];
+  lines_to_check: LineToCheck[];
   links: { review: string; inventory: string };
 };
 
@@ -151,6 +154,7 @@ export async function getProposalView(deps: Deps, p: Principal, proposalId: stri
     },
     ops: ops.map((o) => toOpView(o, foodsById, today)),
     counts: countOps(ops),
+    ...verdictFor(ops, obs!),
     links: { review: links.review(proposal.id), inventory: links.inventory() },
   };
 }

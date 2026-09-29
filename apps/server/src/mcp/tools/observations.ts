@@ -18,7 +18,7 @@ export function registerObservationTools(server: McpServer, deps: AppDeps, p: Pr
         'Transcribe EVERY printed line in order into payload.lines[].raw_text exactly as printed, including coupons, returns and non-food lines (tag them with line_kind).',
         'Put the bought quantity in quantity (e.g. 4 for "4 @ 0.99", 1.25 with unit "lb" for weighed produce), prices in cents, and printed package details in hint.package (e.g. "2X32 OZ" → {count: 2, size: 32, unit: "oz"}).',
         'Do not guess expiry dates or storage. The server canonicalizes items, matches existing inventory, estimates shelf life and builds a proposal.',
-        'Nothing is added to inventory until the user reviews it: give the user the returned review_url.',
+        'Nothing is added to inventory until the user approves. Follow the returned verdict: safe_to_apply → ask for a yes in chat, then resolve_proposal(accept_remaining); quick_check → read lines_to_check to the user first; needs_review → give the user the review_url.',
         'If the result has duplicate_of, the receipt was already recorded; say so and share the existing link.',
       ].join(' '),
       inputSchema: SubmitReceiptInputSchema.shape,

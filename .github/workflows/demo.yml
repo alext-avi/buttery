@@ -1,0 +1,134 @@
+name: Buttery demo
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Never interrupt a migration. Queued main updates may coalesce to the newest one.
+concurrency:
+  group: buttery-demo-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: buttery
+          POSTGRES_PASSWORD: buttery-ci-only
+          POSTGRES_DB: buttery_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U buttery -d buttery_test"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      TEST_DATABASE_URL: postgres://buttery:buttery-ci-only@localhost:5432/buttery_test
+      REASONING_PROVIDER: fallback
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '26'
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build -w apps/web
+      - name: Check deployment scripts
+        run: bash -n scripts/*.sh
+
+  deploy:
+    name: Publish and deploy demo
+    needs: verify
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    environment:
+      name: demo
+      url: ${{ vars.DEMO_URL }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '26'
+      - name: Build one release image
+        id: image
+        env:
+          REPOSITORY: ${{ github.repository }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          image="ghcr.io/${REPOSITORY,,}:sha-$COMMIT_SHA"
+          docker build --platform linux/amd64 \
+            --label "org.opencontainers.image.source=https://github.com/$REPOSITORY" \
+            --label "org.opencontainers.image.revision=$COMMIT_SHA" \
+            --tag "$image" .
+          bash scripts/check-release-image.sh "$image"
+          echo "tag=$image" >> "$GITHUB_OUTPUT"
+      - name: Rehearse the image with a disposable database
+        env:
+          RELEASE_TAG: ${{ steps.image.outputs.tag }}
+        run: |
+          python3 - <<'PY'
+          import os, secrets
+          from pathlib import Path
+          path = Path(os.environ['RUNNER_TEMP']) / 'buttery-ci.env'
+          path.write_text('\n'.join([
+              'DEMO_DB_PASSWORD=' + secrets.token_hex(32),
+              'DEMO_SESSION_SECRET=' + secrets.token_hex(32),
+              'DEMO_PORT=8793',
+              'DEMO_PUBLIC_BASE_URL=http://localhost:8793',
+              'SIGNUP_MODE=closed',
+              'REASONING_PROVIDER=fallback',
+          ]) + '\n')
+          path.chmod(0o600)
+          PY
+          bash scripts/promote-demo.sh "$RELEASE_TAG" "$RUNNER_TEMP/buttery-ci.env"
+          node scripts/smoke-demo.mjs http://localhost:8793
+      - name: Publish the tested image
+        id: publish
+        env:
+          RELEASE_TAG: ${{ steps.image.outputs.tag }}
+          GHCR_USER: ${{ github.repository_owner }} # any name works with GITHUB_TOKEN; bot actors contain [ ]
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s\n' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USER" --password-stdin
+          docker push "$RELEASE_TAG"
+          digest_ref="$(docker image inspect "$RELEASE_TAG" --format '{{index .RepoDigests 0}}')"
+          echo "image=$digest_ref" >> "$GITHUB_OUTPUT"
+      - name: Promote to Vultr and check HTTPS
+        env:
+          RELEASE_IMAGE: ${{ steps.publish.outputs.image }}
+          GHCR_USER: ${{ github.repository_owner }} # any name works with GITHUB_TOKEN; bot actors contain [ ]
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+          DEPLOY_DIR: ${{ vars.DEPLOY_DIR }}
+          DEPLOY_ENV_FILE: ${{ vars.DEPLOY_ENV_FILE }}
+          DEMO_URL: ${{ vars.DEMO_URL }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: bash scripts/deploy-vultr.sh
+      - name: Record release
+        env:
+          RELEASE_IMAGE: ${{ steps.publish.outputs.image }}
+          DEMO_URL: ${{ vars.DEMO_URL }}
+        run: |
+          printf 'Deployed `%s` to %s\n' "$RELEASE_IMAGE" "$DEMO_URL" >> "$GITHUB_STEP_SUMMARY"

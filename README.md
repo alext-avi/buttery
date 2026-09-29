@@ -40,8 +40,8 @@ flowchart LR
 | Sponsor | What it does in Buttery | Status |
 |---|---|---|
 | **Crusoe** (Managed Inference) | The reasoning engine behind every judgment the server makes about food. Canonicalization (the priority), shelf life, activity parsing and recipe ranking run on `deepseek-ai/Deepseek-V4-Flash` (with V4 Pro for parsing), constrained by schemas, deterministic unit and naming standards, guardrails and an offline fallback. See [`docs/crusoe.md`](docs/crusoe.md). | Live; integrated in the server |
-| **DuploCloud** (AI Studio DevKit) | A local QA agent (`buttery-qa` workspace) that runs verification tickets against Buttery over MCP: health, tool discovery, receipt import, duplicate protection and review corrections. See [`docs/duplocloud-local.md`](docs/duplocloud-local.md). | Installed and running locally; MCP scope and first ticket pending |
-| *Hosting (TBD)* | Public, always-on hosting for the API/MCP server. Today it runs on a Mac behind Tailscale Funnel. | Candidate: Vultr (see [Deployment](#deployment)) |
+| **DuploCloud** (AI Studio DevKit) | The QA/operations agent. A Claude Code agent in the `buttery-qa` workspace runs tickets against Buttery over an authenticated MCP scope: identity, receipt import, apply, package check, duplicate protection and undo. See [`docs/duplocloud.md`](docs/duplocloud.md). | Ticket `butteryqa-1` passed all 7 checks (inventory 0 → 6 → 6 → 0) |
+| **Vultr** (Cloud Compute) | Always-on public hosting for the API, MCP server and web app. Every merge to `main` is tested, built into one image, rehearsed, published to GHCR and promoted to the Vultr VM by digest. See [`docs/runbooks/deploy-vultr.md`](docs/runbooks/deploy-vultr.md). | Live at `https://140-82-48-162.sslip.io` |
 
 ### Application
 
@@ -54,7 +54,8 @@ flowchart LR
 | Domain rules | `packages/domain`: units, quantities, expiry math, name normalization and shortlisting, in plain testable code |
 | Web | React 19, React Router 8, Vite 8: a mobile-first review, inventory and settings UI |
 | Identity | WorkOS AuthKit (OAuth 2.1 for MCP connectors and web sign-in) plus personal access tokens (`btr_…`) for CLIs and agent workers |
-| Networking | Docker Compose (`app` + `db`), joined to the agentdock network; public HTTPS through Tailscale Funnel |
+| Networking | Production: Vultr VM, Caddy (automatic HTTPS) in front of the app. Development: Docker Compose (`app` + `db`) on the agentdock network, published through Tailscale Funnel |
+| Delivery | GitHub Actions → GHCR (digest-pinned image) → Vultr over SSH |
 | Tests | Vitest (unit and server), Playwright (phone-viewport end-to-end) |
 
 ## Repository layout
@@ -133,16 +134,29 @@ matches** (down from 2.8%), 98.9% match accuracy, 99.4% precision on high-confid
 
 ## Deployment
 
-Today the Compose stack runs on a Mac, published through Tailscale Funnel. It costs nothing but
-is unavailable when the Mac sleeps. The service is one container plus Postgres, so any small VM
-can host it:
+**Continuous deployment:** `.github/workflows/demo.yml`. Pull requests to `main` run
+typecheck, tests and the web build. A merge to `main` then:
+1. builds one AMD64 image and checks it contains no local credentials;
+2. rehearses it against a throwaway database;
+3. publishes it to GHCR;
+4. promotes that exact digest to Vultr over verified SSH, with a database backup before
+   migrations;
+5. runs read-only HTTPS smoke checks.
 
-1. Provision a VM with Docker (1–2 vCPU and 2 GB RAM is enough).
-2. Copy `.env`, then run `docker compose up -d --build`. The app runs migrations on start.
-3. Point `PUBLIC_BASE_URL` and the AuthKit redirect URIs at the VM's HTTPS hostname.
+**Demo endpoint:** `https://140-82-48-162.sslip.io` (MCP at `/mcp`). It runs on a Vultr
+`vc2-2c-4gb` VM in Silicon Valley (about $0.027/hr), with Caddy providing Let's Encrypt HTTPS in
+front of the app on `127.0.0.1:8793`. The demo has its own database, household and tokens.
 
-Candidate hosts among the event sponsors are Vultr (a small cloud compute VM) and Crusoe Cloud
-(which keeps the whole stack on the main sponsor's platform).
+```sh
+# on the VM, as the deploy user, to create a presenter token (sign-up is closed on the demo):
+docker compose --project-name buttery-demo --env-file /opt/buttery/.env.demo -f /opt/buttery/deploy/demo/compose.yaml \
+  exec app npm run token:create -- --email you@example.com --client "Claude Code"
+claude mcp add --transport http buttery https://140-82-48-162.sslip.io/mcp --header "Authorization: Bearer <btr_ token>"
+```
+
+Host setup, GitHub configuration, rollback and teardown are in
+[`docs/runbooks/deploy-vultr.md`](docs/runbooks/deploy-vultr.md). The Mac + Tailscale Funnel stack
+(`docker-compose.yml`) remains the development environment.
 
 ## Documentation
 
@@ -150,5 +164,7 @@ Candidate hosts among the event sponsors are Vultr (a small cloud compute VM) an
 - [`docs/superpowers/plans/2026-09-29-buttery-phase0-1.md`](docs/superpowers/plans/2026-09-29-buttery-phase0-1.md): Phase 0–1 implementation plan
 - [`docs/crusoe.md`](docs/crusoe.md): how and why Buttery uses Crusoe
 - [`docs/handoffs/2026-09-29-reasoning-integration.md`](docs/handoffs/2026-09-29-reasoning-integration.md): integrating the reasoning module
-- [`docs/duplocloud-local.md`](docs/duplocloud-local.md): the DuploCloud DevKit QA setup
+- [`docs/duplocloud.md`](docs/duplocloud.md) and [`docs/duplocloud-local.md`](docs/duplocloud-local.md): the DuploCloud QA integration and local setup
+- [`docs/demo-readiness.md`](docs/demo-readiness.md): demo readiness evidence and the five-minute demo
 - [`docs/runbooks/connect-clients.md`](docs/runbooks/connect-clients.md): connecting assistants and agents
+- [`docs/runbooks/deploy-vultr.md`](docs/runbooks/deploy-vultr.md): continuous deployment to Vultr

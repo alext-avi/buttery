@@ -10,6 +10,8 @@ test.describe.serial('receipt review on a phone', () => {
     await page.getByRole('button', { name: 'Sign in' }).click();
     await expect(page.getByRole('heading', { name: 'PANTRY CLUB' })).toBeVisible();
     await expect(page.getByText('GRK YOGURT 2X32 OZ')).toBeVisible();
+    // The verdict tells the user how much attention this receipt needs.
+    await expect(page.getByTestId('verdict')).toContainText('worth a glance');
     await expect(page.getByText('shared by Alex via Claude iOS')).toBeVisible();
     // Estimated expiry reads as plain language, without model or confidence jargon.
     const chicken = page.getByTestId('op').filter({ hasText: 'CHKN BREAST 3 LB' });
@@ -27,6 +29,7 @@ test.describe.serial('receipt review on a phone', () => {
     await yogurt.getByLabel('Location').selectOption('freezer');
     await yogurt.getByRole('button', { name: 'Save' }).click();
     await expect(yogurt.getByText('Edited')).toBeVisible();
+    await expect(yogurt).toContainText('2 × 32 oz');
 
     const berries = page.getByTestId('op').filter({ hasText: 'STRAWBERRIES 2 LB' });
     await berries.getByRole('button', { name: 'Skip' }).click();
@@ -34,6 +37,7 @@ test.describe.serial('receipt review on a phone', () => {
     await page.getByRole('button', { name: 'Add 5 items' }).click();
     await expect(page.getByRole('status')).toContainText('Added 5 items');
     await expect(yogurt).toContainText('freezer');
+    await expect(yogurt).toContainText('2 × 32 oz');
     await expect(yogurt.getByText('Added')).toBeVisible();
 
     await page.getByRole('button', { name: 'Undo' }).click();
