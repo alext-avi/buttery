@@ -1,6 +1,6 @@
 # Buttery demo readiness — 2026-09-29
 
-The receipt workflow is ready for a focused local demo. The Vultr deployment workflow is implemented and locally rehearsed; a live Vultr rollout awaits infrastructure wiring and merging the workflow into `main`.
+The receipt workflow is ready for a focused local demo. The Vultr deployment workflow is live: every merge to `main` deploys to `https://140-82-48-162.sslip.io`.
 
 ## Verified
 
@@ -17,7 +17,7 @@ The receipt workflow is ready for a focused local demo. The Vultr deployment wor
 | Local deployment rehearsal | PASS | Separate `buttery-demo` project on port 8793; migration/startup/health/UI/assets/MCP auth boundary |
 | Repeat promotion + backup | PASS | Reused tested image, wrote a readable `pg_dump` archive before promotion, stayed healthy |
 | Workflow validation | PASS | actionlint 1.7.12; Bash syntax; JavaScript syntax; Git whitespace checks |
-| Remote Vultr deployment | NOT RUN | Host/domain/key handoff and workflow merge remain |
+| Remote Vultr deployment | PASS | Merges to `main` deploy automatically to `https://140-82-48-162.sslip.io`: GHCR digest promotion with a pre-migration backup, public HTTPS smoke checks, and an authenticated receipt import on Crusoe. See the [runbook](runbooks/deploy-vultr.md#first-automatic-deployments-2026-09-29). |
 
 The existing Playwright E2E file gained regression assertions for package preservation. That suite was not executed in this session; the corresponding flow was verified through the browser. The fresh-client and mobile tests used fixture transcription and deterministic test reasoning. The live DuploCloud run used the actual local app: canonicalization reported cache, shelf-life calls reported model results, and `fallback_used` was false. None of these checks measures image/OCR accuracy.
 
