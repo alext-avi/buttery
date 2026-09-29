@@ -1,0 +1,168 @@
+{
+  "reviewed_at": "2026-09-29",
+  "basis": "Visual review of the generated output, not the requested objects in generation prompts.",
+  "assets": [
+    {
+      "id": "fridge-overstuffed-v2",
+      "category": "inventory",
+      "title": "Overstuffed family fridge",
+      "source": "built_in_image_gen",
+      "revision": 2,
+      "supersedes": "fridge-clear",
+      "difficulty": "hard",
+      "description": "Crowded shelves, overlapping packages, stacked leftovers, turned labels, and produce behind cloudy drawers.",
+      "expected": {
+        "observed_candidates": [
+          {
+            "label": "pitcher of brown liquid",
+            "contents": null,
+            "exact_remaining_volume": null
+          },
+          {
+            "label": "dairy-style jug",
+            "possible_identity": "milk",
+            "identity_confirmed": false,
+            "remaining_volume": null
+          },
+          {
+            "label": "leafy greens in packaging",
+            "species": null,
+            "mass": null
+          },
+          {
+            "label": "strawberries in a clamshell",
+            "exact_count": null,
+            "mass": null
+          },
+          {
+            "label": "bag of shredded pale/orange food",
+            "possible_identity": "shredded cheese",
+            "identity_confirmed": false
+          },
+          {
+            "label": "closed egg carton partly covered by other containers",
+            "egg_count": null
+          },
+          {
+            "label": "multiple lidded and wrapped food containers",
+            "exact_contents": null
+          },
+          {
+            "label": "flat package with pink slices",
+            "possible_identity": "deli meat",
+            "identity_confirmed": false
+          },
+          {
+            "label": "produce behind drawer fronts",
+            "possible_identities": [
+              "carrots",
+              "bell peppers",
+              "leafy head vegetable"
+            ],
+            "exact_counts": null
+          }
+        ],
+        "inventory_coverage": "partial despite a broad view",
+        "completeness_claim_allowed": false,
+        "expiry_dates": null,
+        "exact_household_counts": null,
+        "suggested_followup": "Ask for a closer photo of a specific obscured shelf or label when it would resolve a needed item or quantity."
+      },
+      "review_notes": [
+        "Reviewed the generated pixels: shelves are densely stacked, retail panels largely face sideways, and crisper contents are partly obscured. Some foreground items remain identifiable, as they would in a usable real-world photo.",
+        "Do not require the prompt's approximate package count. Hidden objects and exact food identities are not ground truth.",
+        "Other visually supported candidates, such as mushroom-like pieces, may be offered tentatively. The candidate list is not an exhaustive household inventory."
+      ],
+      "must_not": [
+        "Treat the broad view as a complete inventory or remove items that cannot be seen.",
+        "Count each visible fragment as a separate package when the fragments may belong to one obscured container.",
+        "Infer exact ingredient amounts, remaining milk volume, or the number of eggs inside the carton.",
+        "Treat generic packaging, nutrition panels, or container shape as proof of a specific product.",
+        "Invent dates, freshness, spoilage, or safety conclusions from an untidy fridge.",
+        "Treat possible receipt matches as new purchases or silently replace recorded quantities."
+      ],
+      "suggested_user_message": "Here's a quick photo of my fridge. Help me figure out what's there and what you need me to check."
+    },
+    {
+      "id": "fridge-obstructed-v2",
+      "category": "inventory",
+      "title": "Half-open door, obstructed view",
+      "source": "built_in_image_gen",
+      "revision": 2,
+      "supersedes": "fridge-occluded",
+      "difficulty": "hard",
+      "description": "Foreground bottles block the view; glare, soft focus, crinkled bags, and crowded shelves hide food and labels.",
+      "expected": {
+        "observed_candidates": [
+          {
+            "label": "foreground condiment-style bottles",
+            "exact_products": null,
+            "remaining_amounts": null
+          },
+          {
+            "label": "partly visible dairy-style jug",
+            "possible_identity": "milk",
+            "identity_confirmed": false,
+            "remaining_volume": null
+          },
+          {
+            "label": "closed egg carton",
+            "egg_count": null
+          },
+          {
+            "label": "leafy produce in overlapping clear bags",
+            "species": null,
+            "mass": null,
+            "exact_package_count": null
+          },
+          {
+            "label": "lidded food containers",
+            "exact_contents": null
+          },
+          {
+            "label": "tall carton with its front hidden",
+            "contents": null
+          },
+          {
+            "label": "wrapped cut green vegetable",
+            "possible_identities": [
+              "cucumber",
+              "zucchini"
+            ],
+            "identity_confirmed": false
+          },
+          {
+            "label": "orange root-like vegetables through plastic",
+            "possible_identity": "carrots",
+            "exact_count": null
+          },
+          {
+            "label": "partly visible red vegetable",
+            "possible_identity": "bell pepper",
+            "exact_count": null
+          }
+        ],
+        "inventory_coverage": "severely partial",
+        "completeness_claim_allowed": false,
+        "expiry_dates": null,
+        "exact_household_counts": null,
+        "suggested_followup": "Ask to open the door fully and photograph the blocked shelf or an unreadable label when needed."
+      },
+      "review_notes": [
+        "Reviewed the generated pixels: door-rack bottles and the door edge block the sides, highlights reflect from bags, and shelf content overlaps heavily.",
+        "The generated image remains usable: its main difficulty is occlusion and unreadable product identity, not total blur.",
+        "Visible container contents may support broad tentative descriptions; recipe identity and measured amounts remain unknown.",
+        "This is an independent scene, not a second angle of fridge-overstuffed-v2."
+      ],
+      "must_not": [
+        "Delete stored food based on failure to see it behind the door or other packages.",
+        "Assert exact brand, contents, amount, or expiration from an unreadable or turned-away label.",
+        "Report exact egg, produce, or package counts when items overlap or are inside closed containers.",
+        "Count separate visible patches of one bag as multiple purchases.",
+        "Require identification of fully hidden groceries to pass this fixture.",
+        "Infer freshness, spoilage, food safety, or household completeness from this single view."
+      ],
+      "suggested_user_message": "Can you update my fridge inventory from this quick photo? Tell me what isn't clear."
+    }
+  ]
+}

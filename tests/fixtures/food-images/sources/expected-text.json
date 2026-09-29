@@ -1,0 +1,254 @@
+{
+  "receipts": {
+    "warehouse": {
+      "merchant": "PANTRY CLUB",
+      "subtitle": "WAREHOUSE MARKET",
+      "transaction_id": "PC-004218",
+      "purchased_at_local": "2026-09-28T18:42:00",
+      "currency": "USD",
+      "rows": [
+        {
+          "raw": "WHOLE MILK 1 GAL",
+          "item": "whole milk",
+          "quantity": 1,
+          "unit": "package",
+          "package_size": {
+            "quantity": 1,
+            "unit": "US_gal"
+          },
+          "amount": 5.99,
+          "kind": "food_purchase"
+        },
+        {
+          "raw": "EGGS 24 CT",
+          "item": "eggs",
+          "quantity": 1,
+          "unit": "package",
+          "package_size": {
+            "quantity": 24,
+            "unit": "count"
+          },
+          "amount": 6.49,
+          "kind": "food_purchase"
+        },
+        {
+          "raw": "BABY SPINACH 16 OZ",
+          "item": "baby spinach",
+          "quantity": 1,
+          "unit": "package",
+          "package_size": {
+            "quantity": 16,
+            "unit": "oz_mass"
+          },
+          "amount": 4.99,
+          "kind": "food_purchase"
+        },
+        {
+          "raw": "STRAWBERRIES 2 LB",
+          "item": "strawberries",
+          "quantity": 1,
+          "unit": "package",
+          "package_size": {
+            "quantity": 2,
+            "unit": "lb"
+          },
+          "amount": 8.99,
+          "kind": "food_purchase"
+        },
+        {
+          "raw": "CHKN BREAST 3 LB",
+          "item": "chicken breast",
+          "quantity": 1,
+          "unit": "package",
+          "package_size": {
+            "quantity": 3,
+            "unit": "lb"
+          },
+          "amount": 12.99,
+          "kind": "food_purchase"
+        },
+        {
+          "raw": "GRK YOGURT 2X32 OZ",
+          "item": "Greek yogurt",
+          "quantity": 1,
+          "unit": "multipack",
+          "package_count": 2,
+          "package_size": {
+            "quantity": 32,
+            "unit": "oz_mass"
+          },
+          "amount": 7.49,
+          "kind": "food_purchase"
+        }
+      ],
+      "subtotal": 46.94,
+      "tax": 0,
+      "total": 46.94
+    },
+    "mixed": {
+      "merchant": "CORNER PANTRY",
+      "subtitle": "NEIGHBORHOOD MARKET",
+      "transaction_id": "CP-001107",
+      "purchased_at_local": "2026-09-29T09:16:00",
+      "currency": "USD",
+      "rows": [
+        {
+          "raw": "BANANAS",
+          "detail": "1.25 LB @ 0.64/LB",
+          "item": "bananas",
+          "quantity": 1.25,
+          "unit": "lb",
+          "unit_price": 0.64,
+          "amount": 0.8,
+          "kind": "food_purchase"
+        },
+        {
+          "raw": "CHERRY TOMATOES 10 OZ",
+          "detail": "2 @ 2.49",
+          "item": "cherry tomatoes",
+          "quantity": 2,
+          "unit": "package",
+          "package_size": {
+            "quantity": 10,
+            "unit": "oz_mass"
+          },
+          "unit_price": 2.49,
+          "amount": 4.98,
+          "kind": "food_purchase"
+        },
+        {
+          "raw": "CHICKPEAS 15 OZ CAN",
+          "detail": "4 @ 0.99",
+          "item": "canned chickpeas",
+          "quantity": 4,
+          "unit": "can",
+          "package_size": {
+            "quantity": 15,
+            "unit": "oz_mass"
+          },
+          "unit_price": 0.99,
+          "amount": 3.96,
+          "kind": "food_purchase"
+        },
+        {
+          "raw": "BABY SPINACH 5 OZ",
+          "item": "baby spinach",
+          "quantity": 1,
+          "unit": "package",
+          "package_size": {
+            "quantity": 5,
+            "unit": "oz_mass"
+          },
+          "amount": 3.49,
+          "kind": "food_purchase"
+        },
+        {
+          "raw": "SPINACH COUPON",
+          "amount": -0.5,
+          "kind": "discount"
+        },
+        {
+          "raw": "PAPER TOWELS 2 ROLL",
+          "amount": 6.99,
+          "kind": "non_food_purchase"
+        },
+        {
+          "raw": "RETURN: MILK 1/2 GAL",
+          "item": "milk",
+          "quantity": 1,
+          "unit": "package",
+          "package_size": {
+            "quantity": 0.5,
+            "unit": "US_gal"
+          },
+          "amount": -4.29,
+          "kind": "return"
+        }
+      ],
+      "subtotal": 15.43,
+      "tax": 0.56,
+      "total": 15.99
+    }
+  },
+  "recipe": {
+    "title": "Tomato & spinach pasta",
+    "servings": 2,
+    "total_time_minutes": 20,
+    "ingredients": [
+      {
+        "text": "150 g dry fusilli",
+        "item": "dry fusilli",
+        "quantity": 150,
+        "unit": "g",
+        "optional": false
+      },
+      {
+        "text": "1 tbsp olive oil",
+        "item": "olive oil",
+        "quantity": 1,
+        "unit": "tbsp",
+        "optional": false
+      },
+      {
+        "text": "2 garlic cloves, finely chopped",
+        "item": "garlic",
+        "quantity": 2,
+        "unit": "clove",
+        "optional": false
+      },
+      {
+        "text": "200 g cherry tomatoes, halved",
+        "item": "cherry tomatoes",
+        "quantity": 200,
+        "unit": "g",
+        "optional": false
+      },
+      {
+        "text": "100 g baby spinach",
+        "item": "baby spinach",
+        "quantity": 100,
+        "unit": "g",
+        "optional": false
+      },
+      {
+        "text": "1/2 tsp salt",
+        "item": "salt",
+        "quantity": 0.5,
+        "unit": "tsp",
+        "optional": false
+      },
+      {
+        "text": "1/4 tsp black pepper",
+        "item": "black pepper",
+        "quantity": 0.25,
+        "unit": "tsp",
+        "optional": false
+      },
+      {
+        "text": "2 tbsp grated Parmesan (optional)",
+        "item": "Parmesan",
+        "quantity": 2,
+        "unit": "tbsp",
+        "optional": true
+      }
+    ],
+    "steps": [
+      "Cook the fusilli according to its package directions. Reserve 1/2 cup of cooking water, then drain.",
+      "Warm the oil in a skillet. Add the garlic and stir for 30 seconds. Add the tomatoes and cook for 5 minutes.",
+      "Add the spinach, salt, and pepper. Stir for about 2 minutes, until the spinach wilts.",
+      "Toss in the pasta. Add a little reserved cooking water if needed. Serve with the optional Parmesan."
+    ]
+  },
+  "cropped_capture": {
+    "id": "recipe-cropped",
+    "visible_ingredient_indices": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "partial_ingredient_indices": [
+      4
+    ]
+  }
+}

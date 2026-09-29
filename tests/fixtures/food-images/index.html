@@ -1,0 +1,178 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Kitchen image lab — synthetic fixtures</title><style>
+:root { color-scheme:light; --ink:#25362c; --muted:#69746b; --line:#dce1d7; --green:#365c43; } *{box-sizing:border-box} body{margin:0;background:#f6f5ef;color:var(--ink);font:15px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif} .wrap{max-width:1320px;margin:auto;padding:30px 36px 70px} header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line);padding-bottom:18px;font-size:12px;letter-spacing:.09em;text-transform:uppercase} header a{color:var(--green);text-transform:none;letter-spacing:0} .hero{padding:40px 0 26px;max-width:800px} .eyebrow{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--green)} h1{font:50px/1.05 Georgia,serif;letter-spacing:-1px;margin:14px 0 16px} .intro{color:var(--muted);font-size:17px;max-width:640px} .stats{display:flex;gap:22px;font-size:12px;color:var(--muted);margin:25px 0}.stats b{color:var(--ink);font-size:17px;margin-right:5px} nav{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 25px} button{font:inherit;font-size:13px;border:1px solid var(--line);background:transparent;color:var(--ink);border-radius:24px;padding:7px 15px;cursor:pointer} button[aria-pressed=true]{background:var(--green);border-color:var(--green);color:#fff}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px} article{background:white;border:1px solid var(--line);border-radius:12px;overflow:hidden;align-self:start} article[hidden]{display:none}.picture{display:block;background:#e7e6df;height:225px;padding:10px;border-bottom:1px solid var(--line)}img{display:block;width:100%;height:100%;object-fit:contain}.body{padding:17px}.row{display:flex;justify-content:space-between;align-items:center}.tag{font-size:10px;letter-spacing:.08em;text-transform:uppercase;background:#edf2e9;color:var(--green);padding:4px 7px;border-radius:4px}.number{color:#97a093;font-size:11px}h2{font:22px/1.2 Georgia,serif;letter-spacing:-.3px;margin:12px 0 9px}p{margin:0 0 14px}.body>p{font-size:13px;color:var(--muted);min-height:58px}details{font-size:12px;margin:16px 0}summary{cursor:pointer;color:var(--green)}pre{font-size:11px;white-space:pre-wrap;overflow-wrap:anywhere;padding:10px;background:#f5f7f2;max-height:260px;overflow:auto}ul{padding-left:16px;color:var(--muted)}li{margin:7px 0}.links{display:flex;justify-content:space-between;gap:6px;border-top:1px solid var(--line);padding-top:12px;align-items:center;font-size:10px;color:var(--muted)}a{color:var(--green)}.links a{font-size:12px;text-decoration:none;font-weight:600}.note{margin-top:30px;padding:20px 0;border-top:1px solid var(--line);color:var(--muted);font-size:12px;max-width:870px}.empty{font-size:13px;color:var(--muted)}@media(max-width:1050px){.grid{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:760px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.wrap{padding:22px}h1{font-size:40px}}@media(max-width:480px){.grid{grid-template-columns:1fr}.picture{height:280px}.stats{gap:12px}header{font-size:10px}.intro{font-size:15px}}
+</style><body><div class="wrap"><header><span>Kitchen / Image lab</span><a href="manifest.json">Fixture manifest ↗</a></header><section class="hero"><div class="eyebrow">Development collection · v2</div><h1>Give your agents<br>something to look at.</h1><p class="intro">Receipts, fridge photos, recipes, and cooking moments. Eight synthetic inputs with expected results and explicit uncertainty.</p><div class="stats"><span><b>8</b> images</span><span><b>4</b> workflows</span><span><b>100%</b> synthetic</span></div></section><nav aria-label="Filter fixtures"><button data-filter="all" aria-pressed="true">All images</button><button data-filter="inventory" aria-pressed="false">Inventory</button><button data-filter="receipt" aria-pressed="false">Receipts</button><button data-filter="recipe" aria-pressed="false">Recipes</button><button data-filter="meal" aria-pressed="false">Cooking</button></nav><main class="grid"><article data-category="inventory"><a class="picture" href="images/fridge-overstuffed-v2.png" target="_blank" rel="noopener"><img src="images/fridge-overstuffed-v2.png" alt="Overstuffed family fridge"></a><div class="body"><div class="row"><span class="tag">inventory</span><span class="number">01</span></div><h2>Overstuffed family fridge</h2><p>Crowded shelves, overlapping packages, stacked leftovers, turned labels, and produce behind cloudy drawers.</p><details><summary>Expected behavior</summary><pre>{
+  &quot;observed_candidates&quot;: [
+    {
+      &quot;label&quot;: &quot;pitcher of brown liquid&quot;,
+      &quot;contents&quot;: null,
+      &quot;exact_remaining_volume&quot;: null
+    },
+    {
+      &quot;label&quot;: &quot;dairy-style jug&quot;,
+      &quot;possible_identity&quot;: &quot;milk&quot;,
+      &quot;identity_confirmed&quot;: false,
+      &quot;remaining_volume&quot;: null
+    },
+    {
+      &quot;label&quot;: &quot;leafy greens in packaging&quot;,
+      &quot;species&quot;: null,
+      &quot;mass&quot;: null
+    },
+    {
+      &quot;label&quot;: &quot;strawberries in a clamshell&quot;,
+      &quot;exact_count&quot;: null,
+      &quot;mass&quot;: null
+    },
+    {
+      &quot;label&quot;: &quot;bag of shredded pale/orange food&quot;,
+      &quot;possible_identity&quot;: &quot;shredded cheese&quot;,
+      &quot;identity_confirmed&quot;: false
+    },
+    {
+      &quot;label&quot;: &quot;closed egg carton partly covered by other containers&quot;,
+      &quot;egg_count&quot;: null
+    },
+    {
+      &quot;label&quot;: &quot;multiple lidded and wrapped food containers&quot;,
+      &quot;exact_contents&quot;: null
+    },
+    {
+      &quot;label&quot;: &quot;flat package with pink slices&quot;,
+      &quot;possible_identity&quot;: &quot;deli meat&quot;,
+      &quot;identity_confirmed&quot;: false
+    },
+    {
+      &quot;label&quot;: &quot;produce behind drawer fronts&quot;,
+      &quot;possible_identities&quot;: [
+        &quot;carrots&quot;,
+        &quot;bell peppers&quot;,
+        &quot;leafy head vegetable&quot;
+      ],
+      &quot;exact_counts&quot;: null
+    }
+  ],
+  &quot;inventory_coverage&quot;: &quot;partial despite a broad view&quot;,
+  &quot;completeness_claim_allowed&quot;: false,
+  &quot;expiry_dates&quot;: null,
+  &quot;exact_household_counts&quot;: null,
+  &quot;suggested_followup&quot;: &quot;Ask for a closer photo of a specific obscured shelf or label when it would resolve a needed item or quantity.&quot;
+}</pre><strong>Should avoid</strong><ul><li>Treat the broad view as a complete inventory or remove items that cannot be seen.</li><li>Count each visible fragment as a separate package when the fragments may belong to one obscured container.</li><li>Infer exact ingredient amounts, remaining milk volume, or the number of eggs inside the carton.</li><li>Treat generic packaging, nutrition panels, or container shape as proof of a specific product.</li><li>Invent dates, freshness, spoilage, or safety conclusions from an untidy fridge.</li><li>Treat possible receipt matches as new purchases or silently replace recorded quantities.</li></ul></details><div class="links"><a href="images/fridge-overstuffed-v2.png" download>Download PNG ↗</a><span>1086 × 1448</span></div></div></article>
+<article data-category="inventory"><a class="picture" href="images/fridge-obstructed-v2.png" target="_blank" rel="noopener"><img src="images/fridge-obstructed-v2.png" alt="Half-open door, obstructed view"></a><div class="body"><div class="row"><span class="tag">inventory</span><span class="number">02</span></div><h2>Half-open door, obstructed view</h2><p>Foreground bottles block the view; glare, soft focus, crinkled bags, and crowded shelves hide food and labels.</p><details><summary>Expected behavior</summary><pre>{
+  &quot;observed_candidates&quot;: [
+    {
+      &quot;label&quot;: &quot;foreground condiment-style bottles&quot;,
+      &quot;exact_products&quot;: null,
+      &quot;remaining_amounts&quot;: null
+    },
+    {
+      &quot;label&quot;: &quot;partly visible dairy-style jug&quot;,
+      &quot;possible_identity&quot;: &quot;milk&quot;,
+      &quot;identity_confirmed&quot;: false,
+      &quot;remaining_volume&quot;: null
+    },
+    {
+      &quot;label&quot;: &quot;closed egg carton&quot;,
+      &quot;egg_count&quot;: null
+    },
+    {
+      &quot;label&quot;: &quot;leafy produce in overlapping clear bags&quot;,
+      &quot;species&quot;: null,
+      &quot;mass&quot;: null,
+      &quot;exact_package_count&quot;: null
+    },
+    {
+      &quot;label&quot;: &quot;lidded food containers&quot;,
+      &quot;exact_contents&quot;: null
+    },
+    {
+      &quot;label&quot;: &quot;tall carton with its front hidden&quot;,
+      &quot;contents&quot;: null
+    },
+    {
+      &quot;label&quot;: &quot;wrapped cut green vegetable&quot;,
+      &quot;possible_identities&quot;: [
+        &quot;cucumber&quot;,
+        &quot;zucchini&quot;
+      ],
+      &quot;identity_confirmed&quot;: false
+    },
+    {
+      &quot;label&quot;: &quot;orange root-like vegetables through plastic&quot;,
+      &quot;possible_identity&quot;: &quot;carrots&quot;,
+      &quot;exact_count&quot;: null
+    },
+    {
+      &quot;label&quot;: &quot;partly visible red vegetable&quot;,
+      &quot;possible_identity&quot;: &quot;bell pepper&quot;,
+      &quot;exact_count&quot;: null
+    }
+  ],
+  &quot;inventory_coverage&quot;: &quot;severely partial&quot;,
+  &quot;completeness_claim_allowed&quot;: false,
+  &quot;expiry_dates&quot;: null,
+  &quot;exact_household_counts&quot;: null,
+  &quot;suggested_followup&quot;: &quot;Ask to open the door fully and photograph the blocked shelf or an unreadable label when needed.&quot;
+}</pre><strong>Should avoid</strong><ul><li>Delete stored food based on failure to see it behind the door or other packages.</li><li>Assert exact brand, contents, amount, or expiration from an unreadable or turned-away label.</li><li>Report exact egg, produce, or package counts when items overlap or are inside closed containers.</li><li>Count separate visible patches of one bag as multiple purchases.</li><li>Require identification of fully hidden groceries to pass this fixture.</li><li>Infer freshness, spoilage, food safety, or household completeness from this single view.</li></ul></details><div class="links"><a href="images/fridge-obstructed-v2.png" download>Download PNG ↗</a><span>1086 × 1448</span></div></div></article>
+<article data-category="receipt"><a class="picture" href="images/receipt-warehouse-clean.png" target="_blank" rel="noopener"><img src="images/receipt-warehouse-clean.png" alt="Warehouse receipt"></a><div class="body"><div class="row"><span class="tag">receipt</span><span class="number">03</span></div><h2>Warehouse receipt</h2><p>Six grocery purchases with abbreviations, package sizes, and a yogurt multipack.</p><details><summary>Expected behavior</summary><pre>{
+  &quot;food_purchase_lines&quot;: 6,
+  &quot;subtotal&quot;: 46.94,
+  &quot;tax&quot;: 0,
+  &quot;total&quot;: 46.94,
+  &quot;currency&quot;: &quot;USD&quot;,
+  &quot;transaction_id&quot;: &quot;PC-004218&quot;,
+  &quot;yogurt&quot;: {
+    &quot;purchased_multipacks&quot;: 1,
+    &quot;containers_per_multipack&quot;: 2,
+    &quot;ounces_per_container&quot;: 32
+  }
+}</pre><strong>Should avoid</strong><ul><li>Treat 24 eggs as 24 packages.</li><li>Treat 2x32 oz as two purchased multipacks.</li><li>Infer expiry dates, storage locations, or current remaining quantities from the purchase record.</li></ul></details><div class="links"><a href="images/receipt-warehouse-clean.png" download>Download PNG ↗</a><span>1800 × 2800</span></div></div></article>
+<article data-category="receipt"><a class="picture" href="images/receipt-warehouse-recapture.png" target="_blank" rel="noopener"><img src="images/receipt-warehouse-recapture.png" alt="Same receipt, different capture"></a><div class="body"><div class="row"><span class="tag">receipt</span><span class="number">04</span></div><h2>Same receipt, different capture</h2><p>The same transaction rendered at a different angle, size, and background.</p><details><summary>Expected behavior</summary><pre>{
+  &quot;transaction_id&quot;: &quot;PC-004218&quot;,
+  &quot;additional_purchase_events_after_original&quot;: 0
+}</pre><strong>Should avoid</strong><ul><li>Add the same groceries again because the image bytes differ.</li><li>Use image hash alone as the complete transaction deduplication strategy.</li></ul></details><div class="links"><a href="images/receipt-warehouse-recapture.png" download>Download PNG ↗</a><span>2000 × 2800</span></div></div></article>
+<article data-category="receipt"><a class="picture" href="images/receipt-mixed-lines.png" target="_blank" rel="noopener"><img src="images/receipt-mixed-lines.png" alt="Weighted produce, coupon, and return"></a><div class="body"><div class="row"><span class="tag">receipt</span><span class="number">05</span></div><h2>Weighted produce, coupon, and return</h2><p>Weighted bananas, multi-quantity food, a coupon, paper towels, and a milk return.</p><details><summary>Expected behavior</summary><pre>{
+  &quot;food_purchase_lines&quot;: 4,
+  &quot;non_food_purchase_lines&quot;: 1,
+  &quot;discount_lines&quot;: 1,
+  &quot;return_lines&quot;: 1,
+  &quot;subtotal&quot;: 15.43,
+  &quot;tax&quot;: 0.56,
+  &quot;total&quot;: 15.99,
+  &quot;currency&quot;: &quot;USD&quot;
+}</pre><strong>Should avoid</strong><ul><li>Add coupons, taxes, totals, or paper towels to food inventory.</li><li>Interpret the negative milk line as a new purchase.</li><li>Silently subtract a milk package from an unrelated lot when the return cannot be matched.</li></ul></details><div class="links"><a href="images/receipt-mixed-lines.png" download>Download PNG ↗</a><span>1800 × 3000</span></div></div></article>
+<article data-category="recipe"><a class="picture" href="images/recipe-complete.png" target="_blank" rel="noopener"><img src="images/recipe-complete.png" alt="Complete recipe screenshot"></a><div class="body"><div class="row"><span class="tag">recipe</span><span class="number">06</span></div><h2>Complete recipe screenshot</h2><p>Original recipe with eight ingredient lines, four steps, fractions, and optional Parmesan.</p><details><summary>Expected behavior</summary><pre>{
+  &quot;servings&quot;: 2,
+  &quot;total_time_minutes&quot;: 20,
+  &quot;ingredient_lines&quot;: 8,
+  &quot;required_ingredient_lines&quot;: 7,
+  &quot;optional_ingredient_lines&quot;: 1,
+  &quot;method_steps&quot;: 4,
+  &quot;completeness&quot;: &quot;complete&quot;
+}</pre><strong>Should avoid</strong><ul><li>Treat optional Parmesan as a required shopping item.</li><li>Assume the household owns ingredients because the recipe lists them.</li><li>Invent a published author, source URL, nutrition facts, or dietary certification.</li></ul></details><div class="links"><a href="images/recipe-complete.png" download>Download PNG ↗</a><span>860 × 2538</span></div></div></article>
+<article data-category="recipe"><a class="picture" href="images/recipe-cropped.png" target="_blank" rel="noopener"><img src="images/recipe-cropped.png" alt="Recipe cut off mid-list"></a><div class="body"><div class="row"><span class="tag">recipe</span><span class="number">07</span></div><h2>Recipe cut off mid-list</h2><p>Same recipe, only the first four ingredient lines fully visible; the fifth line is cut off and all methods are absent.</p><details><summary>Expected behavior</summary><pre>{
+  &quot;title&quot;: &quot;Tomato &amp; spinach pasta&quot;,
+  &quot;servings&quot;: 2,
+  &quot;total_time_minutes&quot;: 20,
+  &quot;fully_readable_ingredients&quot;: [
+    &quot;150 g dry fusilli&quot;,
+    &quot;1 tbsp olive oil&quot;,
+    &quot;2 garlic cloves, finely chopped&quot;,
+    &quot;200 g cherry tomatoes, halved&quot;
+  ],
+  &quot;partial_next_line&quot;: true,
+  &quot;visible_method_steps&quot;: 0,
+  &quot;completeness&quot;: &quot;partial&quot;,
+  &quot;request_remaining_content&quot;: true
+}</pre><strong>Should avoid</strong><ul><li>Recover hidden ingredients or method steps from the evaluator's complete fixture.</li><li>Present generated steps as extracted screenshot content.</li><li>Treat the screenshot as a complete recipe.</li></ul></details><div class="links"><a href="images/recipe-cropped.png" download>Download PNG ↗</a><span>860 × 1080</span></div></div></article>
+<article data-category="meal"><a class="picture" href="images/meal-skillet.png" target="_blank" rel="noopener"><img src="images/meal-skillet.png" alt="Cooking photo with uncertain protein"></a><div class="body"><div class="row"><span class="tag">meal</span><span class="number">08</span></div><h2>Cooking photo with uncertain protein</h2><p>Fusilli, red tomato pieces, wilted greens, and browned pale chunks in a skillet.</p><details><summary>Expected behavior</summary><pre>{
+  &quot;observed_candidates&quot;: [
+    &quot;short spiral pasta&quot;,
+    &quot;small red tomato pieces&quot;,
+    &quot;wilted leafy greens&quot;,
+    &quot;browned pale chunks&quot;
+  ],
+  &quot;protein_identity&quot;: null,
+  &quot;exact_ingredient_quantities&quot;: null,
+  &quot;serving_count&quot;: null,
+  &quot;automatic_inventory_deductions&quot;: 0
+}</pre><strong>Should avoid</strong><ul><li>Assert chicken versus a plant-based protein with certainty.</li><li>Deduct recipe quantities based only on visual similarity.</li><li>Infer allergens, exact oil/butter use, or food safety from the photo.</li><li>Assume this meal followed recipe-complete.</li></ul></details><div class="links"><a href="images/meal-skillet.png" download>Download PNG ↗</a><span>1448 × 1086</span></div></div></article></main><p class="note">Photos were created with built-in image generation. Receipt and recipe screenshots were rendered from original HTML so text and arithmetic are reproducible. This is a development set, not a benchmark of real-world performance. Keep annotations and generation prompts separate from the inputs supplied to the agent being evaluated.</p><a href="README.md">Usage notes and scenarios ↗</a></div><script>for(const button of document.querySelectorAll('[data-filter]'))button.addEventListener('click',()=>{for(const b of document.querySelectorAll('[data-filter]'))b.setAttribute('aria-pressed',String(b===button));for(const card of document.querySelectorAll('[data-category]'))card.hidden=button.dataset.filter!=='all'&&card.dataset.category!==button.dataset.filter;});</script></body></html>

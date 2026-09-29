@@ -1,0 +1,449 @@
+{
+  "version": 2,
+  "created_at": "2026-09-29",
+  "synthetic": true,
+  "description": "Eight original fixtures for receipt extraction, visual inventory, recipe capture, and cooking observations.",
+  "evaluation_notes": [
+    "Give the system under test only the input image and scenario user message. Keep this catalog, source prompts, expected-text.json, HTML, and annotations on the evaluator side.",
+    "Photo expectations are conservative visual-review annotations, not physical ground truth. Generation prompts are not evidence of what the final pixels show.",
+    "Fridge photos are independent scenes, not before/after photographs of one household. The skillet photo is not evidence that the fixture recipe was followed.",
+    "No production ingestion or model benchmark has been run. These fixtures define cases for a future harness.",
+    "Dates and prices are fabricated fixture data. No expiry date, purchase-to-fridge link, or remaining amount is implied."
+  ],
+  "assets": [
+    {
+      "id": "receipt-warehouse-clean",
+      "category": "receipt",
+      "title": "Warehouse receipt",
+      "source": "html_chromium",
+      "description": "Six grocery purchases with abbreviations, package sizes, and a yogurt multipack.",
+      "expected_data_pointer": "sources/expected-text.json#/receipts/warehouse",
+      "expected": {
+        "food_purchase_lines": 6,
+        "subtotal": 46.94,
+        "tax": 0,
+        "total": 46.94,
+        "currency": "USD",
+        "transaction_id": "PC-004218",
+        "yogurt": {
+          "purchased_multipacks": 1,
+          "containers_per_multipack": 2,
+          "ounces_per_container": 32
+        }
+      },
+      "must_not": [
+        "Treat 24 eggs as 24 packages.",
+        "Treat 2x32 oz as two purchased multipacks.",
+        "Infer expiry dates, storage locations, or current remaining quantities from the purchase record."
+      ],
+      "suggested_user_message": "I bought these groceries. Extract the purchases for review."
+    },
+    {
+      "id": "receipt-warehouse-recapture",
+      "category": "receipt",
+      "title": "Same receipt, different capture",
+      "source": "html_chromium",
+      "description": "The same transaction rendered at a different angle, size, and background.",
+      "duplicate_of": "receipt-warehouse-clean",
+      "expected_data_pointer": "sources/expected-text.json#/receipts/warehouse",
+      "expected": {
+        "transaction_id": "PC-004218",
+        "additional_purchase_events_after_original": 0
+      },
+      "must_not": [
+        "Add the same groceries again because the image bytes differ.",
+        "Use image hash alone as the complete transaction deduplication strategy."
+      ],
+      "suggested_user_message": "Here is another picture of that receipt."
+    },
+    {
+      "id": "receipt-mixed-lines",
+      "category": "receipt",
+      "title": "Weighted produce, coupon, and return",
+      "source": "html_chromium",
+      "description": "Weighted bananas, multi-quantity food, a coupon, paper towels, and a milk return.",
+      "expected_data_pointer": "sources/expected-text.json#/receipts/mixed",
+      "expected": {
+        "food_purchase_lines": 4,
+        "non_food_purchase_lines": 1,
+        "discount_lines": 1,
+        "return_lines": 1,
+        "subtotal": 15.43,
+        "tax": 0.56,
+        "total": 15.99,
+        "currency": "USD"
+      },
+      "must_not": [
+        "Add coupons, taxes, totals, or paper towels to food inventory.",
+        "Interpret the negative milk line as a new purchase.",
+        "Silently subtract a milk package from an unrelated lot when the return cannot be matched."
+      ],
+      "suggested_user_message": "Please review this receipt and suggest food inventory changes."
+    },
+    {
+      "id": "fridge-overstuffed-v2",
+      "category": "inventory",
+      "title": "Overstuffed family fridge",
+      "source": "built_in_image_gen",
+      "revision": 2,
+      "supersedes": "fridge-clear",
+      "difficulty": "hard",
+      "description": "Crowded shelves, overlapping packages, stacked leftovers, turned labels, and produce behind cloudy drawers.",
+      "expected": {
+        "observed_candidates": [
+          {
+            "label": "pitcher of brown liquid",
+            "contents": null,
+            "exact_remaining_volume": null
+          },
+          {
+            "label": "dairy-style jug",
+            "possible_identity": "milk",
+            "identity_confirmed": false,
+            "remaining_volume": null
+          },
+          {
+            "label": "leafy greens in packaging",
+            "species": null,
+            "mass": null
+          },
+          {
+            "label": "strawberries in a clamshell",
+            "exact_count": null,
+            "mass": null
+          },
+          {
+            "label": "bag of shredded pale/orange food",
+            "possible_identity": "shredded cheese",
+            "identity_confirmed": false
+          },
+          {
+            "label": "closed egg carton partly covered by other containers",
+            "egg_count": null
+          },
+          {
+            "label": "multiple lidded and wrapped food containers",
+            "exact_contents": null
+          },
+          {
+            "label": "flat package with pink slices",
+            "possible_identity": "deli meat",
+            "identity_confirmed": false
+          },
+          {
+            "label": "produce behind drawer fronts",
+            "possible_identities": [
+              "carrots",
+              "bell peppers",
+              "leafy head vegetable"
+            ],
+            "exact_counts": null
+          }
+        ],
+        "inventory_coverage": "partial despite a broad view",
+        "completeness_claim_allowed": false,
+        "expiry_dates": null,
+        "exact_household_counts": null,
+        "suggested_followup": "Ask for a closer photo of a specific obscured shelf or label when it would resolve a needed item or quantity."
+      },
+      "review_notes": [
+        "Reviewed the generated pixels: shelves are densely stacked, retail panels largely face sideways, and crisper contents are partly obscured. Some foreground items remain identifiable, as they would in a usable real-world photo.",
+        "Do not require the prompt's approximate package count. Hidden objects and exact food identities are not ground truth.",
+        "Other visually supported candidates, such as mushroom-like pieces, may be offered tentatively. The candidate list is not an exhaustive household inventory."
+      ],
+      "must_not": [
+        "Treat the broad view as a complete inventory or remove items that cannot be seen.",
+        "Count each visible fragment as a separate package when the fragments may belong to one obscured container.",
+        "Infer exact ingredient amounts, remaining milk volume, or the number of eggs inside the carton.",
+        "Treat generic packaging, nutrition panels, or container shape as proof of a specific product.",
+        "Invent dates, freshness, spoilage, or safety conclusions from an untidy fridge.",
+        "Treat possible receipt matches as new purchases or silently replace recorded quantities."
+      ],
+      "suggested_user_message": "Here's a quick photo of my fridge. Help me figure out what's there and what you need me to check."
+    },
+    {
+      "id": "fridge-obstructed-v2",
+      "category": "inventory",
+      "title": "Half-open door, obstructed view",
+      "source": "built_in_image_gen",
+      "revision": 2,
+      "supersedes": "fridge-occluded",
+      "difficulty": "hard",
+      "description": "Foreground bottles block the view; glare, soft focus, crinkled bags, and crowded shelves hide food and labels.",
+      "expected": {
+        "observed_candidates": [
+          {
+            "label": "foreground condiment-style bottles",
+            "exact_products": null,
+            "remaining_amounts": null
+          },
+          {
+            "label": "partly visible dairy-style jug",
+            "possible_identity": "milk",
+            "identity_confirmed": false,
+            "remaining_volume": null
+          },
+          {
+            "label": "closed egg carton",
+            "egg_count": null
+          },
+          {
+            "label": "leafy produce in overlapping clear bags",
+            "species": null,
+            "mass": null,
+            "exact_package_count": null
+          },
+          {
+            "label": "lidded food containers",
+            "exact_contents": null
+          },
+          {
+            "label": "tall carton with its front hidden",
+            "contents": null
+          },
+          {
+            "label": "wrapped cut green vegetable",
+            "possible_identities": [
+              "cucumber",
+              "zucchini"
+            ],
+            "identity_confirmed": false
+          },
+          {
+            "label": "orange root-like vegetables through plastic",
+            "possible_identity": "carrots",
+            "exact_count": null
+          },
+          {
+            "label": "partly visible red vegetable",
+            "possible_identity": "bell pepper",
+            "exact_count": null
+          }
+        ],
+        "inventory_coverage": "severely partial",
+        "completeness_claim_allowed": false,
+        "expiry_dates": null,
+        "exact_household_counts": null,
+        "suggested_followup": "Ask to open the door fully and photograph the blocked shelf or an unreadable label when needed."
+      },
+      "review_notes": [
+        "Reviewed the generated pixels: door-rack bottles and the door edge block the sides, highlights reflect from bags, and shelf content overlaps heavily.",
+        "The generated image remains usable: its main difficulty is occlusion and unreadable product identity, not total blur.",
+        "Visible container contents may support broad tentative descriptions; recipe identity and measured amounts remain unknown.",
+        "This is an independent scene, not a second angle of fridge-overstuffed-v2."
+      ],
+      "must_not": [
+        "Delete stored food based on failure to see it behind the door or other packages.",
+        "Assert exact brand, contents, amount, or expiration from an unreadable or turned-away label.",
+        "Report exact egg, produce, or package counts when items overlap or are inside closed containers.",
+        "Count separate visible patches of one bag as multiple purchases.",
+        "Require identification of fully hidden groceries to pass this fixture.",
+        "Infer freshness, spoilage, food safety, or household completeness from this single view."
+      ],
+      "suggested_user_message": "Can you update my fridge inventory from this quick photo? Tell me what isn't clear."
+    },
+    {
+      "id": "recipe-complete",
+      "category": "recipe",
+      "title": "Complete recipe screenshot",
+      "source": "html_chromium",
+      "description": "Original recipe with eight ingredient lines, four steps, fractions, and optional Parmesan.",
+      "expected_data_pointer": "sources/expected-text.json#/recipe",
+      "expected": {
+        "servings": 2,
+        "total_time_minutes": 20,
+        "ingredient_lines": 8,
+        "required_ingredient_lines": 7,
+        "optional_ingredient_lines": 1,
+        "method_steps": 4,
+        "completeness": "complete"
+      },
+      "must_not": [
+        "Treat optional Parmesan as a required shopping item.",
+        "Assume the household owns ingredients because the recipe lists them.",
+        "Invent a published author, source URL, nutrition facts, or dietary certification."
+      ],
+      "suggested_user_message": "Save this recipe and preserve its quantities, steps, and optional ingredients."
+    },
+    {
+      "id": "recipe-cropped",
+      "category": "recipe",
+      "title": "Recipe cut off mid-list",
+      "source": "html_chromium",
+      "description": "Same recipe, only the first four ingredient lines fully visible; the fifth line is cut off and all methods are absent.",
+      "related_to": "recipe-complete",
+      "expected": {
+        "title": "Tomato & spinach pasta",
+        "servings": 2,
+        "total_time_minutes": 20,
+        "fully_readable_ingredients": [
+          "150 g dry fusilli",
+          "1 tbsp olive oil",
+          "2 garlic cloves, finely chopped",
+          "200 g cherry tomatoes, halved"
+        ],
+        "partial_next_line": true,
+        "visible_method_steps": 0,
+        "completeness": "partial",
+        "request_remaining_content": true
+      },
+      "must_not": [
+        "Recover hidden ingredients or method steps from the evaluator's complete fixture.",
+        "Present generated steps as extracted screenshot content.",
+        "Treat the screenshot as a complete recipe."
+      ],
+      "suggested_user_message": "Can you save the recipe in this screenshot?"
+    },
+    {
+      "id": "meal-skillet",
+      "category": "meal",
+      "title": "Cooking photo with uncertain protein",
+      "source": "built_in_image_gen",
+      "description": "Fusilli, red tomato pieces, wilted greens, and browned pale chunks in a skillet.",
+      "expected": {
+        "observed_candidates": [
+          "short spiral pasta",
+          "small red tomato pieces",
+          "wilted leafy greens",
+          "browned pale chunks"
+        ],
+        "protein_identity": null,
+        "exact_ingredient_quantities": null,
+        "serving_count": null,
+        "automatic_inventory_deductions": 0
+      },
+      "must_not": [
+        "Assert chicken versus a plant-based protein with certainty.",
+        "Deduct recipe quantities based only on visual similarity.",
+        "Infer allergens, exact oil/butter use, or food safety from the photo.",
+        "Assume this meal followed recipe-complete."
+      ],
+      "suggested_user_message": "Here's what I'm making. What can you identify, and what do you need to know to record it?"
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "retry-same-upload",
+      "inputs": [
+        "receipt-warehouse-clean",
+        "receipt-warehouse-clean"
+      ],
+      "setup": "Apply the first receipt after explicit test-user approval, then retry the same request with the same idempotency key.",
+      "pass": "Only one purchase record and one set of six grocery purchase lines exist."
+    },
+    {
+      "id": "dedupe-new-capture",
+      "inputs": [
+        "receipt-warehouse-clean",
+        "receipt-warehouse-recapture"
+      ],
+      "setup": "Apply the first transaction, then upload the recapture with a new request identifier.",
+      "pass": "Detect the existing transaction; create no additional purchase events. Both evidence images may be retained."
+    },
+    {
+      "id": "receipt-photo-reconciliation",
+      "inputs": [
+        "receipt-warehouse-clean",
+        "fridge-overstuffed-v2"
+      ],
+      "setup": "The test user says the photo is a later snapshot of their inventory; this is scenario context, not a visual fact.",
+      "pass": "Reconcile possible matches without recording a second purchase. Ask about uncertain quantities; do not infer consumption, returns, or waste from visual discrepancies."
+    },
+    {
+      "id": "hidden-is-not-missing",
+      "inputs": [
+        "fridge-obstructed-v2"
+      ],
+      "setup": "Seed inventory with eggs, milk, spinach, strawberries, and chicken.",
+      "pass": "Produce a partial observation, retain unobserved items, and request a targeted retake if needed. Stored chicken remains because a blocked view is not evidence of removal."
+    },
+    {
+      "id": "crop-needs-followup",
+      "inputs": [
+        "recipe-cropped"
+      ],
+      "setup": "Fresh session, no access to recipe-complete or the expected data.",
+      "pass": "Save a partial recipe, retain the four readable ingredient lines, and request the remainder. Any proposed recipe completion is explicitly generated."
+    },
+    {
+      "id": "meal-needs-consumption-confirmation",
+      "inputs": [
+        "meal-skillet"
+      ],
+      "setup": "Fresh session without a selected recipe or user-confirmed ingredient quantities.",
+      "pass": "Suggest ingredient candidates, request needed information, and apply zero inventory deductions."
+    },
+    {
+      "id": "recover-state",
+      "inputs": [
+        "receipt-warehouse-clean"
+      ],
+      "setup": "Apply the reviewed receipt, persist state, then start a fresh agent session.",
+      "pass": "Recover the same purchase records, provenance, and unresolved quantities without relying on prior chat messages."
+    },
+    {
+      "id": "recipe-to-shopping-list",
+      "inputs": [
+        "recipe-complete"
+      ],
+      "setup": "Use the explicitly confirmed inventory below and target two servings. These quantities are scenario data, not claims from a fridge photograph.",
+      "confirmed_inventory": [
+        {
+          "item": "dry fusilli",
+          "quantity": 100,
+          "unit": "g"
+        },
+        {
+          "item": "cherry tomatoes",
+          "quantity": 75,
+          "unit": "g"
+        },
+        {
+          "item": "baby spinach",
+          "quantity": 100,
+          "unit": "g"
+        },
+        {
+          "item": "garlic",
+          "quantity": 2,
+          "unit": "clove"
+        },
+        {
+          "item": "olive oil",
+          "quantity": null,
+          "unit": "tbsp"
+        },
+        {
+          "item": "salt",
+          "quantity": 10,
+          "unit": "tsp"
+        },
+        {
+          "item": "black pepper",
+          "quantity": 10,
+          "unit": "tsp"
+        }
+      ],
+      "expected_required_shortfalls": [
+        {
+          "item": "dry fusilli",
+          "quantity": 50,
+          "unit": "g"
+        },
+        {
+          "item": "cherry tomatoes",
+          "quantity": 125,
+          "unit": "g"
+        }
+      ],
+      "expected_needs_check": [
+        "olive oil"
+      ],
+      "expected_optional": [
+        "Parmesan"
+      ],
+      "pass": "List the two known shortfalls, flag oil quantity for checking, and keep Parmesan optional. Do not treat unknown oil quantity as zero or sufficient."
+    }
+  ],
+  "updated_at": "2026-09-29"
+}

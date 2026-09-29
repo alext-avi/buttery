@@ -1,0 +1,121 @@
+{
+  "retired_reason": "Replaced at user request: original fridge scenes were too clean and easy.",
+  "assets": [
+    {
+      "id": "fridge-clear",
+      "category": "inventory",
+      "title": "Readable fridge overview",
+      "source": "built_in_image_gen",
+      "description": "Clearly separated groceries alongside two unlabeled closed containers.",
+      "expected": {
+        "observed_candidates": [
+          {
+            "label": "milk",
+            "evidence": "MILK label on one jug",
+            "remaining_volume": null
+          },
+          {
+            "label": "eggs",
+            "evidence": "open carton with multiple eggs visible",
+            "exact_count_not_scored": true
+          },
+          {
+            "label": "spinach",
+            "evidence": "SPINACH label on one leafy-green clamshell",
+            "mass": null
+          },
+          {
+            "label": "red bell peppers",
+            "visible_count": 3
+          },
+          {
+            "label": "strawberries",
+            "evidence": "one clear punnet",
+            "mass": null,
+            "exact_count_not_scored": true
+          },
+          {
+            "label": "unidentified rectangular food container",
+            "visible_container_count": 1,
+            "contents": null
+          },
+          {
+            "label": "unidentified small white tub",
+            "visible_container_count": 1,
+            "contents": null
+          }
+        ],
+        "inventory_coverage": "visible main compartment only",
+        "expiry_dates": null
+      },
+      "review_notes": [
+        "The prompt requested yogurt, but the resulting tub has no identifying label. Yogurt is an optional hypothesis, not an exact-match answer.",
+        "Do not score the prompted egg count; presence of eggs is sufficient."
+      ],
+      "must_not": [
+        "Identify the plain tub as confirmed yogurt.",
+        "Infer what is inside the rectangular container.",
+        "Convert visible containers into exact remaining grams or volume.",
+        "Conclude that off-camera door shelves or the whole household are empty."
+      ],
+      "suggested_user_message": "What can you tell is in my fridge? Show uncertain items for me to confirm."
+    },
+    {
+      "id": "fridge-occluded",
+      "category": "inventory",
+      "title": "Crowded, partially hidden fridge",
+      "source": "built_in_image_gen",
+      "description": "Overlapping packaging, dim light, unreadable labels, and obscured food.",
+      "expected": {
+        "observed_candidates": [
+          {
+            "label": "opaque dairy-style jug",
+            "possible_identity": "milk",
+            "identity_confirmed": false,
+            "remaining_volume": null
+          },
+          {
+            "label": "bag of leafy greens",
+            "species": null,
+            "mass": null
+          },
+          {
+            "label": "red bell peppers",
+            "visible_count": 2,
+            "total_household_count": null
+          },
+          {
+            "label": "closed egg carton",
+            "egg_count": null
+          },
+          {
+            "label": "partly visible berry punnet",
+            "possible_identity": "strawberries",
+            "exact_count": null
+          },
+          {
+            "label": "unidentified tall carton",
+            "contents": null
+          },
+          {
+            "label": "several lidded food containers",
+            "contents": null
+          }
+        ],
+        "inventory_coverage": "partial",
+        "completeness_claim_allowed": false
+      },
+      "review_notes": [
+        "The renderer produced translucent containers and additional background jars/drawer produce. Broad tentative observations of those are acceptable; exact contents are not known.",
+        "This image was generated independently of fridge-clear."
+      ],
+      "must_not": [
+        "Delete stored items merely because they are hidden or absent from this view.",
+        "Infer the number of eggs inside the closed carton.",
+        "Claim all visible containers are empty, fresh, safe, or expired.",
+        "Use the generation prompt as hidden household truth."
+      ],
+      "suggested_user_message": "Can you help update my fridge inventory from this photo?"
+    }
+  ]
+}
