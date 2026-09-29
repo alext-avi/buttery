@@ -57,6 +57,12 @@ npm test -w packages/reasoning          # offline; live smoke tests run only if 
 npm run reasoning:ping                  # one estimateShelfLife call; fails unless path is model/repair
 npm run reasoning:eval                  # fixture receipts → canonicalizeItems, prints accuracy
 npm run reasoning:eval -- --model zai/GLM-5.3-Flash
+
+# Synthetic canonicalization eval (see "Canonicalization eval" below)
+npm run eval:synth:generate -w packages/reasoning                       # rebuild eval/data (no model)
+npm run eval:synth -w packages/reasoning -- --provider fallback           # free baseline
+npm run eval:synth -w packages/reasoning -- --split dev --limit 10        # a cheap slice
+npm run eval:synth -w packages/reasoning -- --split test --concurrency 1  # held-out; run sparingly
 ```
 
 Pass eval flags after `--`, or npm will swallow them.
@@ -66,6 +72,7 @@ Pass eval flags after `--`, or npm will swallow them.
 | Guardrail | Behavior |
 |---|---|
 | Structured output | Uses `response_format: {type: "json_schema"}`, generated from the Zod output schema. If a model rejects that with a 400, it is downgraded to `json_object` with the schema in the prompt, and the downgrade is remembered per model. The result is then Zod-validated. On failure there is **one repair retry** that includes the errors. If that also fails, the fallback runs. |
+| Canonicalization standards | Applied after the model, deterministically. (1) `package.unit` is limited to `g, kg, oz, lb, ml, l, fl_oz, gal, qt, pt, ct` (`PACKAGE_UNITS`) by the schema, and so by guided decoding too. (2) **A size printed on the line wins over the model's reading of it.** The parser handles `2X32 OZ`, `2/40OZ`, `1/2 GAL`, `HG`, `2.5#`, `52Z`, `16FLOZ`, `5 DZ` → 60 ct, `12 PK … 12 FL OZ` and "a dozen". The model's package is used only when nothing parseable is printed, and a replacement records a violation. (3) Canonical names are lowercased, with brand tokens, "organic", sizes and fat ratios removed; variety words (`2%`, `greek`, `brown`) stay. (4) Explicit receipt markers (`INST SAV`, `MFR CPN`, `COUPON`, `/ … OFF`, leading `RETURN`/`RTN`/`REFUND`) set `line_kind`. `toBaseQuantity(pkg)` converts any package to g, ml or ct, so the domain can compare `64 FL OZ` with `1/2 GAL`. |
 | Output hygiene | Before validation, fields that carry no information are dropped, without recording a violation: `""` ids, zero or negative numbers, `recipe_id`/`servings` on activities other than `cooked`, `to_location` on kinds that don't move food, and zero package fields. See the Crusoe notes for why. |
 | Constrained choices | A `match.food_id` outside that line's candidates becomes `'new'`/`low`. Unknown or duplicate `line_id`s are dropped, and omitted lines are filled by the fallback. `parseActivity` drops unknown `lot_id`s (keeping `food_name`; each drop lowers confidence one level and adds a `"could not be matched to a known lot"` ambiguity, so the parse is never auto-applied against an invented lot), unknown `recipe_id`s and unknown ambiguity candidates. `rankRecipes` returns every candidate exactly once: unknown ids are dropped, duplicates removed, and missing ids appended in input order. Ideas are dropped when `include_ideas` is false. |
 | Safety clamps | `SHELF_LIFE_DEFAULTS` holds 27 categories × 5 states with `{days, max}`. An estimate above `max` is clamped, including `null` ("no expiry") where a max exists, and its confidence drops one level. Missing requested states are filled from defaults. |
@@ -175,6 +182,81 @@ Qwen3.8-27B and Gemma. They're not a formal eval.
 These are the built-in defaults. Avoid `Kimi-K2.6` and `Nemotron-3.5-Lightning` with the
 current timeouts.
 
+## Canonicalization eval (synthetic)
+
+`canonicalizeItems` is the function this module invests in: every downstream feature depends on
+item records, and a wrong match silently corrupts inventory. The small fixture eval above can't
+tell models or prompts apart, so there is a second, larger eval.
+
+**Data** (`eval/`): generated locally and deterministically by `eval/synth/generate.ts`. No model
+is involved, so labels are correct by construction.
+- **Catalog:** ~110 foods and 12 non-food items (`eval/synth/catalog.ts`). Each has 6 receipt-style
+  name variants; even-indexed variants go to dev and odd ones to test, so test strings never appear
+  in dev.
+- **Receipts:** rendered in four store styles (warehouse, supermarket, natural, corner) with
+  brand prefixes, compact sizes, sold-by-weight lines, multipacks, coupons, savings lines,
+  returns, deposits, fees and mild scanning noise.
+- **Candidate scenarios** for matching:
+  - `hit`: the food is present, with look-alike distractors;
+  - `alias`: the food carries a learned alias;
+  - `lookalike`: only different-but-similar foods are present;
+  - `unrelated`: only unrelated foods are present;
+  - `empty`: no candidates.
+- **Splits:** dev is 40 receipts / 505 lines. Test is 28 generated receipts plus 4 hand-written
+  receipts (`eval/synth/hand.ts`): 375 lines in total.
+- **Metrics:** match accuracy, **wrong match** (attached to the wrong food), missed match, and
+  precision of high-confidence matches, alongside name (strict / lenient), category, package
+  and line kind.
+
+**Method:**
+- Prompts and standards were tuned on dev only.
+- Test ran once on the code before this work (`339a95a`) and once after.
+- Every run was on `deepseek-ai/Deepseek-V4-Flash`, sequential, at about $0.02–0.03 per full split.
+- Results are cached on disk by prompt and code version, so re-scoring is free.
+
+| Test split (375 lines) | Before | After |
+|---|---|---|
+| line_kind | 97.9% | **99.5%** |
+| canonical_name (lenient / strict) | 97.8% / 85.2% | 98.1% / 83.6% |
+| category | 99.1% | 99.7% |
+| package | 99.6% | **100%** |
+| match accuracy | 97.2% | **98.6%** |
+| **wrong match** | **2.8%** | **0.9%** |
+| missed match | 0.0% | 0.6% |
+| precision of `high`-confidence matches | 97.7% | **99.4%** |
+| latency per receipt | 5.4 s | 4.5 s |
+
+Dev after tuning: 100% line_kind, 99.4% name, 99.8% category, 100% package, 98.3% match,
+0.6% wrong match, and 100% precision on high-confidence matches (219/219).
+
+**What changed on dev and why:**
+- **Unit standards and printed-size parsing:** package 99.2 → 100%, and removed the
+  mis-read sizes ("5 DZ" read as 5).
+- **Explicit variety rules in the prompt**, plus "prefer new when unsure": whole vs 2%,
+  greek vs vanilla, brown vs white rice, egg whites vs eggs. On dev, the wrong-match rate fell
+  from 2.5% to 0.6%.
+- **Rationale capped at 8 words**, and naming the product rather than a flavor.
+
+**Caveats:**
+- *Label fixes.* The dev run exposed labels that were too narrow ("dish detergent" is dish
+  soap; "avocado oil" had been filed as vegetable oil). I fixed them, and the lenient name rule
+  now accepts more specific names. Both before and after were scored with the fixed labels.
+- *Hand-case leakage.* I wrote the hand-written test receipts before adding the parser rules for
+  `#`, `Z`, `HG` and `2/40OZ`, so that subset isn't fully held out. The generated subset alone
+  scores 98.4% match, 0.9% wrong match and 100% package. The hand subset scores 100% match on
+  36 lines.
+- *Remaining errors:*
+  - Mostly defensible disagreements: "pico de gallo" vs salsa, "tamari" vs soy sauce, and
+    "puppy chow" as a name.
+  - Two lines with no product ("@ 2 FOR 5.00", "BAG REFUND 0.10") classified as item /
+    non_food rather than coupon.
+  - One high-confidence look-alike (cherry tomatoes matched to tomatoes).
+- **Recommendation for Section 7:** high-confidence matches were right 99.4–100% of the time,
+  so auto-applying `high`-confidence receipt matches later is reasonable. Low-confidence matches
+  were right 0–40% of the time and should only ever be shown as suggestions.
+- **Latency:** about 0.3 s per line; a 15–17 line receipt takes 5–6 s. Splitting a receipt into
+  parallel calls didn't help (it measured the same or slower), so it stays one call per receipt.
+
 ## Proposed spec changes
 
 These are recorded here instead of editing the spec. None of them change the public contract in
@@ -185,10 +267,14 @@ the brief.
    ("leafy produce, condiment…"); `foods.category` should use this list so clamps and
    defaults line up. Input `category` fields stay free strings, and unknown values are
    classified from the food name.
-2. **Package convention.** `package.count` is the number of sub-packages (only for multipacks:
-   `2X32 OZ` → `{count: 2, size: 32, unit: "oz"}`). `size` and `unit` are the amount per
-   package. Units: `oz, fl_oz, lb, g, kg, ml, l, gal, qt, pt, ct`, so `24 CT` →
-   `{size: 24, unit: "ct"}`.
+2. **Package convention and unit standard.** `package.count` is the number of sub-packages
+   (only for multipacks: `2X32 OZ` → `{count: 2, size: 32, unit: "oz"}`). `size` and `unit` are
+   the amount per package. `unit` is an enum (`PACKAGE_UNITS`: `g, kg, oz, lb, ml, l, fl_oz, gal,
+   qt, pt, ct`), so `24 CT` → `{size: 24, unit: "ct"}` and `5 DZ` → `{size: 60, unit: "ct"}`. A size
+   printed on the line always wins over the model. `lots.quantity` and coverage math (Section 4
+   "Units and coverage") can use `toBaseQuantity` to get g, ml or ct. Receipt `oz` on liquids is
+   ambiguous (`52Z` orange juice); it is kept as `oz`, and the domain may treat it as `fl_oz` when
+   the food has a density.
 3. **Call record on fallback after a model failure:** `provider: 'crusoe'`, the model name,
    `valid: false` and `error` set, with `output` equal to the fallback output actually
    returned. With `REASONING_PROVIDER=fallback`: `provider: 'fallback'`, `model: null`,
@@ -210,7 +296,12 @@ the brief.
    `{count?, size?, unit?}` or a printed string (`"2X32 OZ"`); unusable values (zero, negative,
    non-finite, empty unit) are dropped rather than rejected. `estimateShelfLife` `states` are
    deduped (first occurrence wins).
-9. **Additive exports:** `createFallbackProvider`, `createMemoryCache`, `configFromEnv`, `DEFAULT_MODEL`, `DEFAULT_MODELS`,
+9. **Canonical name and line-kind standards** (see Guardrails): names are post-normalized
+   (lowercase; no brand, "organic", size or fat ratio), and explicit coupon/return markers
+   override the model's `line_kind`. Both are deterministic, so alias learning (Section 4
+   `foods.aliases`) sees stable spellings.
+10. **Additive exports:** `PACKAGE_UNITS`, `parsePackage`, `toBaseQuantity`, `samePackage`,
+   `standardizeCanonicalName`, `createFallbackProvider`, `createMemoryCache`, `configFromEnv`, `DEFAULT_MODEL`, `DEFAULT_MODELS`,
    `FOOD_CATEGORIES`, `FOOD_STATES`, `categoryDefaults`, `DEFAULT_TIMEOUTS_MS`,
    `ReasoningInputError`, and a Zod schema for every input and output (`*Schema`).
    `createFakeProvider` takes an optional second `{now, timeoutsMs}` argument.
