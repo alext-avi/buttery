@@ -143,6 +143,17 @@ export async function getInventoryPage(deps: Deps, p: Principal, input: { locati
   return { today, use_soon: bucket(views), by_location: byLocation, locations, counts };
 }
 
+const ACTIVITY_WORDS: Record<string, string> = { bought: 'bought', used: 'used some', finished: 'finished', discarded: 'thrown away', froze: 'frozen', thawed: 'thawed', opened: 'opened', moved: 'moved' };
+
+/** Plain description of a user statement (log_activity, log_text, correct_item) for the evidence list. */
+function statementSummary(payload: Record<string, unknown>): string {
+  if (payload.source === 'log_text' && typeof payload.text === 'string') return `You said: “${payload.text}”`;
+  if (payload.source === 'correct_item') return `Correction${typeof payload.reason === 'string' && payload.reason ? `: ${payload.reason}` : ''}`;
+  const acts = Array.isArray(payload.activities) ? (payload.activities as Array<{ kind: string }>) : [];
+  const words = [...new Set(acts.map((a) => ACTIVITY_WORDS[a.kind] ?? a.kind))];
+  return words.length ? `Update: ${words.join(', ')}` : 'Update';
+}
+
 export async function getItem(deps: Deps, p: Principal, lotId: string, now = new Date()) {
   const { db } = deps;
   const { today, links } = await context(deps, p, now);
@@ -177,7 +188,7 @@ export async function getItem(deps: Deps, p: Principal, lotId: string, now = new
       observation_id: o.id,
       kind: o.kind,
       observed_at: o.observedAt.toISOString(),
-      summary: o.kind === 'receipt' ? `Receipt · ${payload.store ?? 'unknown store'} · ${payload.purchased_at?.slice(0, 10) ?? ''}` : o.kind,
+      summary: o.kind === 'receipt' ? `Receipt · ${payload.store ?? 'unknown store'} · ${payload.purchased_at?.slice(0, 10) ?? ''}` : statementSummary(o.payload),
       store: payload.store ?? null,
       purchased_at: payload.purchased_at ?? null,
       line: line?.raw_text ?? null,

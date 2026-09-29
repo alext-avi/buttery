@@ -7,3 +7,4 @@ export * from './catalog';
 export * from './hash';
 export * from './receipt';
 export * from './verdict';
+export * from './activity';

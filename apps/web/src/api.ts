@@ -26,6 +26,8 @@ async function request<T>(method: 'GET' | 'POST', path: string, body?: unknown):
   return data as T;
 }
 
+export type ItemActivityKind = 'used' | 'finished' | 'discarded' | 'froze' | 'thawed' | 'opened' | 'moved';
+
 export const newKey = () => crypto.randomUUID();
 
 export const api = {
@@ -36,6 +38,8 @@ export const api = {
     request<ResolveResponse>('POST', `/api/proposals/${id}/resolve`, body),
   inventory: (location?: string) => request<InventoryResponse>('GET', `/api/inventory${location ? `?location=${encodeURIComponent(location)}` : ''}`),
   item: (id: string) => request<ItemResponse>('GET', `/api/items/${id}`),
+  itemActivity: (id: string, body: { kind: ItemActivityKind; fraction?: number; to_location?: string; idempotency_key: string }) =>
+    request<{ change_set_id: string | null; applied: Array<{ kind: string; summary: string }>; unresolved: Array<{ reason: string }> }>('POST', `/api/items/${id}/activity`, body),
   undo: (changeSetId: string, key: string) => request<UndoResponse>('POST', `/api/change-sets/${changeSetId}/undo`, { idempotency_key: key }),
   me: () => request<Me>('GET', '/api/me'),
   updateHousehold: (body: { name?: string; timezone?: string }) => request<Me>('POST', '/api/household', body),

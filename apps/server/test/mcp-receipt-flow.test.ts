@@ -16,7 +16,7 @@ describe('MCP receipt flow', () => {
     const { token } = await seedUser(testDb());
     const client = await mcpClient(server.url, token);
     const names = (await client.listTools()).tools.map((t) => t.name).sort();
-    expect(names).toEqual(['get_household_summary', 'get_item', 'resolve_proposal', 'search_inventory', 'submit_observation', 'undo', 'upsert_food', 'whoami']);
+    expect(names).toEqual(['correct_item', 'get_changes', 'get_household_summary', 'get_item', 'log_activity', 'log_text', 'resolve_proposal', 'search_inventory', 'submit_observation', 'undo', 'upsert_food', 'whoami']);
     expect(client.getInstructions()).toContain('get_household_summary');
     await client.close();
   });
@@ -60,5 +60,19 @@ describe('MCP receipt flow', () => {
     await expect(callTool(ca, 'submit_observation', { kind: 'receipt', payload: { store: 'x', purchased_at: 'bad', lines: [] }, idempotency_key: 'mcp-rcpt-3' })).rejects.toThrow();
     await ca.close();
     await cb.close();
+  });
+
+  it('tells Buttery what happened: freeze, see the change, undo', async () => {
+    const { token } = await seedUser(testDb(), 'act@example.com', 'Claude iOS');
+    const c = await mcpClient(server.url, token);
+    const sub = await callTool(c, 'submit_observation', { kind: 'receipt', payload: fixtureReceipt('warehouse'), idempotency_key: 'mcp-act-rcpt-1' });
+    await callTool(c, 'resolve_proposal', { proposal_id: sub.proposal_id, accept_remaining: true, apply: true, idempotency_key: 'mcp-act-apply-1' });
+    const froze = await callTool(c, 'log_activity', { activities: [{ kind: 'froze', items: [{ food_name: 'chicken breast' }] }], idempotency_key: 'mcp-act-froze-1' });
+    expect(froze.applied[0].summary).toContain('freezer');
+    const feed = await callTool(c, 'get_changes', { limit: 3 });
+    expect(feed.changes[0]).toMatchObject({ label: 'Froze Chicken breast', items: ['Chicken breast'] });
+    const undone = await callTool(c, 'undo', { change_set_id: froze.change_set_id, idempotency_key: 'mcp-act-undo-1' });
+    expect(undone.reverted_change_set_id).toBe(froze.change_set_id);
+    await c.close();
   });
 });

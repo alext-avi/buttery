@@ -1,5 +1,5 @@
 import { hashJson, normalizeName, type Perishability } from '@buttery/domain';
-import type { CanonicalizeInput, CanonicalizeOutput, ReasoningPort, ReasoningResult, ShelfLifeInput, ShelfLifeOutput } from '../../src/reasoning/port';
+import type { CanonicalizeInput, CanonicalizeOutput, ParseActivityOutput, ReasoningPort, ReasoningResult, ShelfLifeInput, ShelfLifeOutput } from '../../src/reasoning/port';
 
 // What a good model returns for the fixture receipts in tests/fixtures/food-images.
 export const FIXTURE_CANON: Record<string, [name: string, category: string, perishability: Perishability]> = {
@@ -15,7 +15,7 @@ export const FIXTURE_CANON: Record<string, [name: string, category: string, peri
   'BABY SPINACH 5 OZ': ['Baby spinach', 'leafy_produce', 'perishable'],
 };
 
-function result<T>(fn: 'canonicalizeItems' | 'estimateShelfLife', input: unknown, output: T): ReasoningResult<T> {
+function result<T>(fn: 'canonicalizeItems' | 'estimateShelfLife' | 'parseActivity', input: unknown, output: T): ReasoningResult<T> {
   return {
     output,
     path: 'model',
@@ -52,11 +52,21 @@ export function createFakeReasoning(opts: { fail?: boolean } = {}): FakeReasonin
     async estimateShelfLife(input) {
       calls.shelfLife.push(input);
       if (opts.fail) throw new Error('network down');
-      const out: ShelfLifeOutput =
+      // Like the real provider, answer exactly the states asked for.
+      const table: Record<string, { days: number; confidence: 'medium' | 'low' }> =
         input.perishability === 'shelf_stable'
-          ? { per_state: { sealed: { days: 730, confidence: 'medium' }, opened: { days: 4, confidence: 'low' } }, rationale: 'canned' }
-          : { per_state: { sealed: { days: 5, confidence: 'medium' }, opened: { days: 3, confidence: 'medium' }, frozen: { days: 180, confidence: 'medium' } }, rationale: 'fresh' };
+          ? { sealed: { days: 730, confidence: 'medium' }, opened: { days: 4, confidence: 'low' } }
+          : { sealed: { days: 5, confidence: 'medium' }, opened: { days: 3, confidence: 'medium' }, frozen: { days: 180, confidence: 'medium' }, thawed: { days: 2, confidence: 'low' } };
+      const out: ShelfLifeOutput = {
+        per_state: Object.fromEntries(input.states.filter((s) => table[s]).map((s) => [s, table[s]!])),
+        rationale: input.perishability === 'shelf_stable' ? 'canned' : 'fresh',
+      };
       return result('estimateShelfLife', input, out);
+    },
+    async parseActivity(input) {
+      if (opts.fail) throw new Error('network down');
+      const out: ParseActivityOutput = { activities: [], ambiguities: [{ text: input.text, reason: 'fake parser', candidate_lot_ids: [] }], confidence: 'low' };
+      return result('parseActivity', input, out);
     },
   };
 }
