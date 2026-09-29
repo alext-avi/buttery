@@ -136,7 +136,7 @@ export async function getProposalView(deps: Deps, p: Principal, proposalId: stri
   };
 }
 
-function receiptLabel(payload: Record<string, unknown>): string {
+export function receiptLabel(payload: Record<string, unknown>): string {
   const store = typeof payload.store === 'string' ? payload.store : 'receipt';
   const date = typeof payload.purchased_at === 'string' ? payload.purchased_at.slice(0, 10) : '';
   return `Receipt: ${store}${date ? ` ${date}` : ''}`;
