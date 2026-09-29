@@ -46,8 +46,8 @@ export const connections = pgTable('connections', {
 });
 
 /**
- * One-time codes an agent attaches to a link. Opening the link grants a page pass for that one page (not a sign-in).
- * Only an HMAC of the code is stored.
+ * Codes an agent attaches to a link. Opening the link within the window grants a page pass for that one page
+ * (not a sign-in); it can be opened any number of times until it expires. Only an HMAC of the code is stored.
  */
 export const loginCodes = pgTable('login_codes', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -59,8 +59,8 @@ export const loginCodes = pgTable('login_codes', {
   householdId: uuid('household_id').notNull().references(() => households.id),
   userId: uuid('user_id').notNull().references(() => users.id),
   connectionId: uuid('connection_id').notNull().references(() => connections.id),
+  /** How many times the link was opened; kept for the record, not a limit. */
   uses: integer('uses').notNull().default(0),
-  maxUses: integer('max_uses').notNull().default(1),
   expiresAt: ts('expires_at').notNull(),
   createdAt: ts('created_at').notNull().defaultNow(),
 });

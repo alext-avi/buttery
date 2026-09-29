@@ -5,14 +5,14 @@ import { and, eq, isNotNull } from 'drizzle-orm';
 import { changes, changeSets } from '../db/schema';
 import type { AppDeps } from '../http/app';
 import { NOT_PAGES } from '../http/web';
-import { findLoginCode, inHousehold, pageScope, spendLoginCode, type PageScope } from '../identity/loginCodes';
+import { findLoginCode, inHousehold, pageScope, recordLoginCodeUse, type PageScope } from '../identity/loginCodes';
 import type { Principal } from '../identity/principal';
 import { ensureWebConnection } from '../identity/webConnection';
 import { clientIp, createFailureLimiter, type FailureLimiter } from './rateLimit';
 import { principalFromSession, readSession, safeNext } from './session';
 
 /**
- * Page passes: opening an agent's link grants access to that one page for 24 hours.
+ * Page passes: opening an agent's link (any number of times while its code is live) grants access to that one page for 24 hours.
  * A pass is not a sign-in: it never touches the session cookie, and every other page still asks the person to sign in.
  */
 const COOKIE = 'btr_pass';
@@ -56,9 +56,7 @@ export function apiNeed(method: string, path: string): Need | null {
 export type PageLinks = {
   /** The principal a page pass grants for this API request, if any. */
   principalFor(c: Context, need: Need): Promise<Principal | null>;
-  /** Spends a code from the one-tap Open screen and grants its page pass. */
-  open(c: Context, raw: string): Promise<{ ok: true; next: string } | { ok: false; reason: 'invalid' | 'rate_limited' }>;
-  /** `?login=` on a page someone can already see (signed in, or holding a pass): strip it and redirect, spending nothing. */
+  /** Handles `?login=` on page requests: grants the page pass if needed, then redirects to the same URL without it. */
   middleware: MiddlewareHandler;
 };
 
@@ -94,17 +92,10 @@ export function createPageLinks(deps: AppDeps, limiter: FailureLimiter = createF
     return null;
   }
 
-  async function open(c: Context, raw: string) {
-    const ip = clientIp(c, config.TRUST_PROXY);
-    if (limiter.blocked(ip)) return { ok: false as const, reason: 'rate_limited' as const };
-    const grant = await findLoginCode(db, config, raw);
-    if (!grant || !(await spendLoginCode(db, grant.codeId))) {
-      limiter.fail(ip);
-      return { ok: false as const, reason: 'invalid' as const };
-    }
+  async function grantPass(c: Context, scope: PageScope, grant: { userId: string; householdId: string; connectionId: string; clientName: string }) {
     const connectionId = await ensureWebConnection(db, grant.userId, grant.householdId, { id: grant.connectionId, name: `Web (link from ${grant.clientName})` });
-    const pass: Pass = { k: grant.scope.kind, i: grant.scope.id, u: grant.userId, h: grant.householdId, c: connectionId, e: Date.now() + PASS_MS };
-    const others = (await readPasses(c, secret)).filter((p) => !covers(p, grant.scope));
+    const pass: Pass = { k: scope.kind, i: scope.id, u: grant.userId, h: grant.householdId, c: connectionId, e: Date.now() + PASS_MS };
+    const others = (await readPasses(c, secret)).filter((p) => !covers(p, scope));
     await setSignedCookie(c, COOKIE, JSON.stringify([...others, pass].slice(-MAX_PASSES)), secret, {
       httpOnly: true,
       sameSite: 'Lax',
@@ -112,24 +103,35 @@ export function createPageLinks(deps: AppDeps, limiter: FailureLimiter = createF
       path: '/',
       maxAge: PASS_MS / 1000,
     });
-    return { ok: true as const, next: safeNext(grant.path) };
   }
 
   const middleware: MiddlewareHandler = async (c, next) => {
     const url = new URL(c.req.url);
     const scope = pageScope(url.pathname);
-    if (c.req.method !== 'GET' || !url.searchParams.has('login') || !scope || NOT_PAGES.some((p) => url.pathname.startsWith(p))) return next();
+    const raw = url.searchParams.get('login');
+    if (c.req.method !== 'GET' || raw === null || !scope || NOT_PAGES.some((p) => url.pathname.startsWith(p))) return next();
     url.searchParams.delete('login');
     const target = safeNext(`${url.pathname}${url.search}`);
+    const toLogin = (reason: string) => c.redirect(`/login?reason=${reason}&next=${encodeURIComponent(target)}`);
 
-    const pass = (await readPasses(c, secret)).find((p) => covers(p, scope));
-    if (pass && (await live(pass))) return c.redirect(target);
+    // Already able to see the page: just clean the URL. Old links in a chat never count as failed guesses.
+    const held = (await readPasses(c, secret)).find((p) => covers(p, scope));
+    if (held && (await live(held))) return c.redirect(target);
     const session = await readSession(c, config.SESSION_SECRET);
     const current = session ? await principalFromSession(db, session) : null;
     if (current && (await inHousehold(db, current.householdId, scope))) return c.redirect(target);
-    // Otherwise the web app shows the one-tap Open screen, so link previews can't spend the code.
-    return next();
+
+    const ip = clientIp(c, config.TRUST_PROXY);
+    if (limiter.blocked(ip)) return toLogin('rate_limited');
+    const grant = await findLoginCode(db, config, raw);
+    // The code only opens the page it was minted for.
+    if (!grant || !covers({ k: grant.scope.kind, i: grant.scope.id } as Pass, scope) || !(await recordLoginCodeUse(db, grant.codeId))) {
+      limiter.fail(ip);
+      return toLogin('link_expired');
+    }
+    await grantPass(c, scope, grant);
+    return c.redirect(target);
   };
 
-  return { principalFor, open, middleware };
+  return { principalFor, middleware };
 }

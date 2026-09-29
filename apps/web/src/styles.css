@@ -138,7 +138,3 @@ dd { margin: 0; overflow-wrap: anywhere; }
 ul.notes { list-style: none; padding: 0; margin: 8px 0; }
 .token-login summary { cursor: pointer; color: var(--muted); font-size: 0.9rem; padding: 8px 0; }
 .conf-medium { color: var(--text); border-color: var(--border); background: var(--soft); font-weight: 600; }
-.open-link { display: grid; gap: 12px; padding-top: 24px; max-width: 420px; }
-.open-link h1 { margin: 0; }
-.open-link p { margin: 0; }
-.open-link button, .open-link .button { min-height: 52px; }

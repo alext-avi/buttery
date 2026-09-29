@@ -2,9 +2,16 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router';
 import { api, ApiError } from '../api';
 
+// Why a link from the assistant landed here instead of on its page.
+const REASONS: Record<string, string> = {
+  link_expired: 'That link has expired. Ask your assistant for a new one, or sign in.',
+  rate_limited: 'Too many tries from this network. Wait a few minutes, or sign in.',
+};
+
 export function Login() {
   const [params] = useSearchParams();
   const next = params.get('next') ?? '/inventory';
+  const reason = REASONS[params.get('reason') ?? ''];
   const [token, setToken] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -58,7 +65,13 @@ export function Login() {
       <h1>
         buttery<span>.</span>
       </h1>
-      <p className="muted">Sign in to review and correct your household's food.</p>
+      {reason ? (
+        <div className="banner warn" role="status">
+          {reason}
+        </div>
+      ) : (
+        <p className="muted">Sign in to review and correct your household's food.</p>
+      )}
       {signup && (
         <a className="button primary" href={`/auth/authkit?mode=sign-up&next=${encodeURIComponent(next)}`}>
           Create your household

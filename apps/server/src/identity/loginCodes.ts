@@ -74,7 +74,7 @@ export async function mintPageLink(db: Executor, config: Config, p: Principal, r
 
 export type LoginGrant = { codeId: string; userId: string; householdId: string; connectionId: string; clientName: string; path: string; scope: PageScope };
 
-/** A live code: unexpired, unused, and its minting connection not revoked. Does not spend it. */
+/** A live code: unexpired, and its minting connection not revoked. */
 export async function findLoginCode(db: Executor, config: Config, raw: string, now = new Date()): Promise<LoginGrant | null> {
   const code = normalizeCode(raw);
   if (!SHAPE.test(code)) return null;
@@ -82,7 +82,7 @@ export async function findLoginCode(db: Executor, config: Config, raw: string, n
     .select({ code: loginCodes, clientName: connections.clientName })
     .from(loginCodes)
     .innerJoin(connections, eq(connections.id, loginCodes.connectionId))
-    .where(and(eq(loginCodes.codeHash, hashCode(config.SESSION_SECRET, code)), lt(loginCodes.uses, loginCodes.maxUses), gt(loginCodes.expiresAt, now), isNull(connections.revokedAt)))
+    .where(and(eq(loginCodes.codeHash, hashCode(config.SESSION_SECRET, code)), gt(loginCodes.expiresAt, now), isNull(connections.revokedAt)))
     .limit(1);
   if (!row) return null;
   const c = row.code;
@@ -90,12 +90,12 @@ export async function findLoginCode(db: Executor, config: Config, raw: string, n
   return { codeId: c.id, userId: c.userId, householdId: c.householdId, connectionId: c.connectionId, clientName: row.clientName, path: c.path, scope };
 }
 
-/** Atomically spends the code; false if it was used or expired in the meantime. */
-export async function spendLoginCode(db: Executor, codeId: string, now = new Date()): Promise<boolean> {
+/** Counts an open; false if the code expired in the meantime. */
+export async function recordLoginCodeUse(db: Executor, codeId: string, now = new Date()): Promise<boolean> {
   const rows = await db
     .update(loginCodes)
     .set({ uses: sql`${loginCodes.uses} + 1` })
-    .where(and(eq(loginCodes.id, codeId), lt(loginCodes.uses, loginCodes.maxUses), gt(loginCodes.expiresAt, now)))
+    .where(and(eq(loginCodes.id, codeId), gt(loginCodes.expiresAt, now)))
     .returning({ id: loginCodes.id });
   return rows.length > 0;
 }

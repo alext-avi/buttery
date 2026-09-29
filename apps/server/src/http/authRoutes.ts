@@ -1,6 +1,5 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import type { PageLinks } from '../auth/pageLinks';
 import { clearSession, safeNext, writeSession } from '../auth/session';
 import { AppError } from '../errors';
 import { resolvePat } from '../identity/tokens';
@@ -8,13 +7,12 @@ import { ensureWebConnection } from '../identity/webConnection';
 import type { AppDeps } from './app';
 
 const TokenLoginSchema = z.object({ token: z.string().min(1).max(200), next: z.string().max(500).optional() });
-const OpenLinkSchema = z.object({ code: z.string().min(1).max(40) });
 
 export function requireJson(contentType: string | undefined): void {
   if (!(contentType ?? '').includes('application/json')) throw new AppError('unsupported_media_type', 'Send JSON', 415);
 }
 
-export function authRoutes(deps: AppDeps, pageLinks: PageLinks) {
+export function authRoutes(deps: AppDeps) {
   const app = new Hono();
   app.get('/config', (c) => c.json({ authkit: Boolean(deps.authkit), signup: Boolean(deps.authkit) && deps.config.SIGNUP_MODE === 'open' }));
   app.get('/authkit', (c) => {
@@ -40,14 +38,6 @@ export function authRoutes(deps: AppDeps, pageLinks: PageLinks) {
     const connectionId = await ensureWebConnection(deps.db, pat.userId, pat.householdId, { id: pat.connectionId, name: `Web (token for ${pat.clientName})` });
     await writeSession(c, deps.config, { u: pat.userId, h: pat.householdId, c: connectionId });
     return c.json({ ok: true, next: safeNext(body.next) });
-  });
-  // The one-tap Open screen for an agent's link: spends the code, grants a pass for that page only.
-  app.post('/open', async (c) => {
-    requireJson(c.req.header('content-type'));
-    const result = await pageLinks.open(c, OpenLinkSchema.parse(await c.req.json()).code);
-    if (result.ok) return c.json({ ok: true, next: result.next });
-    if (result.reason === 'rate_limited') throw new AppError('rate_limited', 'Too many tries. Wait a few minutes and try again.', 429);
-    throw new AppError('link_expired', 'This link has expired or was already used. Ask your assistant for a new one.', 401);
   });
   app.post('/logout', (c) => {
     clearSession(c);

@@ -11,7 +11,7 @@ export function registerLoginTools(server: McpServer, deps: AppDeps, p: Principa
     {
       title: 'Get a one-tap page link',
       description:
-        'Turn a Buttery page URL (a review_url, an item link or the inventory link) into a link the user can open without signing in. The returned url carries a one-time code and opens only that page: it does not sign the user in, and other pages still ask them to sign in. Call it once per link you share; the code expires if not opened within a few minutes.',
+        'Turn a Buttery page URL (a review_url, an item link or the inventory link) into a link the user can open without signing in. The returned url opens only that page: it does not sign the user in, and other pages still ask them to sign in. It works for a few minutes, then expires. Call it once per link you share.',
       inputSchema: { url: z.string().min(1).max(500).describe('The Buttery page URL to share, e.g. a review_url from submit_observation') },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     },
@@ -20,8 +20,7 @@ export function registerLoginTools(server: McpServer, deps: AppDeps, p: Principa
       return {
         url: link.url,
         expires_at: link.expiresAt.toISOString(),
-        opens: 'once',
-        how_to_use: `Give the user this url instead of the plain link. It opens that one page once, without signing in, and must be opened within ${deps.config.LOGIN_CODE_TTL_MINUTES} minutes. Call get_login_code again for each other link.`,
+        how_to_use: `Give the user this url instead of the plain link. It opens that one page without signing in, and works for ${deps.config.LOGIN_CODE_TTL_MINUTES} minutes. Call get_login_code again for each other link.`,
       };
     }),
   );

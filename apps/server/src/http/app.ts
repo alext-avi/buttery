@@ -31,7 +31,7 @@ export function createApp(deps: AppDeps) {
   app.route('/.well-known', wellKnownRoutes(deps.config));
   app.route('/mcp', mcpRoutes(deps));
   const pageLinks = createPageLinks(deps);
-  app.route('/auth', authRoutes(deps, pageLinks));
+  app.route('/auth', authRoutes(deps));
   app.route('/api', apiRoutes(deps, pageLinks));
   app.use('*', pageLinks.middleware);
   mountWeb(app, deps.config);

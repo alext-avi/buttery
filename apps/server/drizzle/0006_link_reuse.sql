@@ -1,0 +1,1 @@
+ALTER TABLE "login_codes" DROP COLUMN "max_uses";
