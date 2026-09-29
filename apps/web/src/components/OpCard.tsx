@@ -98,7 +98,10 @@ function EditForm({ op, initial, onSave, onCancel }: { op: OpView; initial: Edit
     const e: Edits = {};
     if (foodId) e.food_id = foodId;
     else if (name.trim() && name.trim() !== d.food_name) e.new_food = { name: name.trim() };
-    e.quantity = amount === '' ? { kind: 'unknown' } : { kind: approx ? 'approx' : 'exact', amount: Number(amount), unit };
+    const quantity: Quantity = amount === '' ? { kind: 'unknown' } : { kind: approx ? 'approx' : 'exact', amount: Number(amount), unit };
+    if (quantity.kind !== d.quantity.kind || quantity.amount !== d.quantity.amount || quantity.unit !== d.quantity.unit) {
+      e.quantity = quantity;
+    }
     if (location !== d.location) e.location = location;
     if (expires !== (d.printed_expiry_on ?? '')) e.expires_on = expires || null;
     onSave(e);
