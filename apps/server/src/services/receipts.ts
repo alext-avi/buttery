@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
+import { ReasoningInputError } from '@buttery/reasoning';
 import {
   exactAliasMatch,
   lineOverlap,
@@ -71,6 +72,8 @@ async function callWithFallback<T>(
   try {
     return { result: await primary(), threw: false };
   } catch (err) {
+    // Invalid input is a server bug: surface it. Anything else (a fake or unexpected throw) gets the heuristic.
+    if (err instanceof ReasoningInputError) throw err;
     console.warn('reasoning failed; using interim heuristic', err);
     const result = await fallback();
     return { result: { ...result, call: { ...result.call, error: String(err) } }, threw: true };
@@ -279,6 +282,7 @@ export async function submitReceipt(deps: Deps, p: Principal, input: SubmitRecei
         ...(f.category ? { category: f.category } : {}),
         perishability: f.perishability,
         states: ['sealed', 'opened', 'frozen'],
+        location: defaultLocationFor(f.perishability),
         anchor_date: payload.purchased_at.slice(0, 10),
       };
       const r = await callWithFallback(() => deps.reasoning.estimateShelfLife(sl, { householdId: p.householdId }), () => interim.estimateShelfLife(sl));

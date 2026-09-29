@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const UNITS = ['count', 'g', 'kg', 'oz', 'lb', 'ml', 'l', 'fl_oz', 'cup', 'qt', 'gal'] as const;
+export const UNITS = ['count', 'g', 'kg', 'oz', 'lb', 'ml', 'l', 'fl_oz', 'cup', 'pt', 'qt', 'gal'] as const;
 export const UnitSchema = z.enum(UNITS);
 export type Unit = z.infer<typeof UnitSchema>;
 
@@ -33,7 +33,7 @@ const UNIT_ALIASES: Record<string, Unit> = {
   lb: 'lb', lbs: 'lb', pound: 'lb', pounds: 'lb',
   ml: 'ml', l: 'l', liter: 'l', litre: 'l',
   fl_oz: 'fl_oz', 'fl oz': 'fl_oz', floz: 'fl_oz',
-  cup: 'cup', cups: 'cup', qt: 'qt', quart: 'qt',
+  cup: 'cup', cups: 'cup', pt: 'pt', pint: 'pt', pints: 'pt', qt: 'qt', quart: 'qt',
   gal: 'gal', gallon: 'gal', us_gal: 'gal',
 };
 

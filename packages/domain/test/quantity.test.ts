@@ -7,6 +7,8 @@ describe('normalizeUnit', () => {
     expect(normalizeUnit('oz_mass')).toBe('oz');
     expect(normalizeUnit('LBS')).toBe('lb');
     expect(normalizeUnit('ct')).toBe('count');
+    expect(normalizeUnit('pt')).toBe('pt');
+    expect(normalizeUnit('PINT')).toBe('pt');
     expect(normalizeUnit('package')).toBeUndefined();
     expect(normalizeUnit(undefined)).toBeUndefined();
   });

@@ -27,4 +27,11 @@ describe('matching', () => {
     expect(list[0]?.id).toBe('2');
     expect(list.every((c) => c.score >= 0.2)).toBe(true);
   });
+
+  it('keeps look-alike foods on the shortlist so the model can tell them apart', () => {
+    const foods = [food('1', 'whole milk'), food('2', '2% milk'), food('3', 'strawberries')];
+    const ids = shortlist('2% MILK 1 GAL', foods).map((c) => c.id);
+    expect(ids).toContain('1');
+    expect(ids).toContain('2');
+  });
 });

@@ -6,7 +6,7 @@ import { ConfidenceBadge, ExpiryBadge } from './Badges';
 export type Choice = { action: 'accept' } | { action: 'reject' } | { action: 'edit'; edits: Edits };
 
 const LOCATIONS = ['fridge', 'freezer', 'pantry', 'counter'];
-const UNITS = ['count', 'g', 'kg', 'oz', 'lb', 'ml', 'l', 'fl_oz', 'cup', 'qt', 'gal'];
+const UNITS = ['count', 'g', 'kg', 'oz', 'lb', 'ml', 'l', 'fl_oz', 'cup', 'pt', 'qt', 'gal'];
 
 function describe(q: Quantity): string {
   if (q.kind === 'unknown' || q.amount === undefined) return 'unknown amount';
