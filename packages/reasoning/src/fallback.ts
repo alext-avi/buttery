@@ -19,6 +19,7 @@ import {
   detectLineKind,
   normalizeName,
   parsePackage,
+  sanitizePackage,
   trigramSimilarity,
 } from './text.ts';
 
@@ -36,7 +37,9 @@ export function fallbackCanonicalize(input: CanonicalizeParsed): CanonicalizeOut
       const canonical_name = line.hint?.food_name?.trim().toLowerCase() || canonicalNameFromRaw(line.raw_text);
       const line_kind = line.line_kind ?? detectLineKind(line.raw_text, line.price_cents);
       const category = line_kind === 'non_food' ? 'non_food' : classifyCategory(nameSource);
-      const pkg = parsePackage(line.hint?.package ?? line.raw_text);
+      const hinted = line.hint?.package;
+      const pkg =
+        (typeof hinted === 'string' ? parsePackage(hinted) : sanitizePackage(hinted)) ?? parsePackage(line.raw_text);
 
       const normalized = normalizeName(canonical_name);
       let best: { food_id: string; score: number; exact: boolean } | undefined;
@@ -65,6 +68,24 @@ export function fallbackCanonicalize(input: CanonicalizeParsed): CanonicalizeOut
           : 'fallback: no candidates; rule-based name and category',
       };
     }),
+  };
+}
+
+/**
+ * Canonicalize output that is valid by construction, with no parsing: used only if the regular
+ * fallback output would fail the schema.
+ */
+export function minimalCanonicalize(input: CanonicalizeParsed): CanonicalizeOutput {
+  return {
+    lines: input.lines.map((line) => ({
+      line_id: line.line_id,
+      canonical_name: line.raw_text.trim().toLowerCase() || 'unknown item',
+      category: 'other',
+      perishability: 'perishable',
+      line_kind: line.line_kind ?? 'item',
+      match: { food_id: 'new', confidence: 'low' },
+      rationale: 'fallback: minimal output',
+    })),
   };
 }
 

@@ -10,6 +10,7 @@ import {
   fallbackParseActivity,
   fallbackRankRecipes,
   fallbackShelfLife,
+  minimalCanonicalize,
 } from './fallback.ts';
 import {
   guardCanonicalize,
@@ -30,16 +31,18 @@ interface FunctionSpec {
   input: z.ZodType;
   output: z.ZodType;
   fallback(input: any): unknown;
+  /** Last resort when the guarded fallback output would not validate: valid by construction. */
+  minimal(input: any): unknown;
   guard(input: any, output: any): Guarded<unknown>;
   /** Output hygiene applied to the model's JSON before validation. */
   normalize?(json: unknown): unknown;
 }
 
 const SPECS: Record<ReasoningFunction, FunctionSpec> = {
-  canonicalizeItems: { ...FUNCTION_SCHEMAS.canonicalizeItems, fallback: fallbackCanonicalize, guard: guardCanonicalize, normalize: normalizeCanonicalize },
-  estimateShelfLife: { ...FUNCTION_SCHEMAS.estimateShelfLife, fallback: fallbackShelfLife, guard: guardShelfLife },
-  parseActivity: { ...FUNCTION_SCHEMAS.parseActivity, fallback: fallbackParseActivity, guard: guardParseActivity, normalize: normalizeParseActivity },
-  rankRecipes: { ...FUNCTION_SCHEMAS.rankRecipes, fallback: fallbackRankRecipes, guard: guardRankRecipes },
+  canonicalizeItems: { ...FUNCTION_SCHEMAS.canonicalizeItems, fallback: fallbackCanonicalize, minimal: minimalCanonicalize, guard: guardCanonicalize, normalize: normalizeCanonicalize },
+  estimateShelfLife: { ...FUNCTION_SCHEMAS.estimateShelfLife, fallback: fallbackShelfLife, minimal: fallbackShelfLife, guard: guardShelfLife },
+  parseActivity: { ...FUNCTION_SCHEMAS.parseActivity, fallback: fallbackParseActivity, minimal: fallbackParseActivity, guard: guardParseActivity, normalize: normalizeParseActivity },
+  rankRecipes: { ...FUNCTION_SCHEMAS.rankRecipes, fallback: fallbackRankRecipes, minimal: fallbackRankRecipes, guard: guardRankRecipes },
 };
 
 const JSON_SCHEMAS = Object.fromEntries(
@@ -155,12 +158,12 @@ export async function runReasoning<T>(
   });
 
   const fallback = (error: string | null, extra: Partial<ReasoningCallRecord> = {}): ReasoningResult<T> => {
-    const guarded = spec.guard(input, spec.output.parse(spec.fallback(input)));
+    const { output, violations } = safeFallback(fn, spec, input);
     return {
-      output: guarded.output as T,
+      output: output as T,
       path: 'fallback',
-      violations: guarded.violations,
-      call: record({ output: guarded.output, valid: error === null, error, ...extra }),
+      violations,
+      call: record({ output, valid: error === null, error, ...extra }),
     };
   };
 
@@ -171,13 +174,13 @@ export async function runReasoning<T>(
   const cache = ctx.cache ?? opts.defaultCache;
   const key = cacheKey(fn, model, inputHash);
   if (cache) {
-    const hit = (await cache.get(key)) as CachedEntry | undefined;
-    const valid = hit && spec.output.safeParse(hit.output);
-    if (hit && valid?.success) {
+    const hit = (await safeCacheGet(cache, key)) as Partial<CachedEntry> | undefined;
+    const valid = hit && typeof hit === 'object' ? spec.output.safeParse(hit.output) : undefined;
+    if (valid?.success) {
       return {
         output: valid.data as T,
         path: 'cache',
-        violations: hit.violations,
+        violations: Array.isArray(hit!.violations) ? hit!.violations.filter((v) => typeof v === 'string') : [],
         call: record({ output: valid.data, valid: true }),
       };
     }
@@ -212,14 +215,18 @@ export async function runReasoning<T>(
 
       const checked = validate(spec, response.content);
       if (checked.ok) {
-        const parsed = checked.data;
-        const guarded = spec.guard(input, parsed);
-        if (cache) await cache.set(key, { output: guarded.output, violations: guarded.violations } satisfies CachedEntry);
+        const guarded = spec.guard(input, checked.data);
+        // Guards can add content (e.g. fallback lines for omitted ones), so re-check the final shape.
+        const final = spec.output.safeParse(guarded.output);
+        if (!final.success) {
+          return fallback(`guarded output failed validation: ${z.prettifyError(final.error)}`, { tokensIn, tokensOut });
+        }
+        if (cache) await safeCacheSet(cache, key, { output: final.data, violations: guarded.violations } satisfies CachedEntry);
         return {
-          output: guarded.output as T,
+          output: final.data as T,
           path: attempt,
           violations: guarded.violations,
-          call: record({ output: guarded.output, valid: true, tokensIn, tokensOut }),
+          call: record({ output: final.data, valid: true, tokensIn, tokensOut }),
         };
       }
       if (attempt === 'repair') {
@@ -234,6 +241,41 @@ export async function runReasoning<T>(
   } finally {
     clearTimeout(timer);
     ctx.signal?.removeEventListener('abort', onCallerAbort);
+  }
+}
+
+/**
+ * The guarded fallback output, validated. If it would not validate (a bug or an input shape the
+ * fallback rules did not anticipate), return the function's minimal output instead of throwing.
+ */
+function safeFallback(fn: ReasoningFunction, spec: FunctionSpec, input: unknown): { output: unknown; violations: string[] } {
+  try {
+    const guarded = spec.guard(input, spec.fallback(input));
+    const checked = spec.output.safeParse(guarded.output);
+    if (checked.success) return { output: checked.data, violations: guarded.violations };
+  } catch {
+    // fall through to the minimal output
+  }
+  return {
+    output: spec.output.parse(spec.minimal(input)),
+    violations: [`${fn}: fallback output failed validation; returned minimal output`],
+  };
+}
+
+/** Cache reads and writes never fail a call: a failing get is a miss, a failing set is ignored. */
+async function safeCacheGet(cache: ReasoningCache, key: string): Promise<unknown> {
+  try {
+    return await cache.get(key);
+  } catch {
+    return undefined;
+  }
+}
+
+async function safeCacheSet(cache: ReasoningCache, key: string, value: unknown): Promise<void> {
+  try {
+    await cache.set(key, value);
+  } catch {
+    // ignored: the result is still valid
   }
 }
 

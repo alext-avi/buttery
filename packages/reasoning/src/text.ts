@@ -66,14 +66,31 @@ export interface ParsedPackage {
   unit?: string;
 }
 
+/**
+ * Keep only usable package fields: finite, positive numbers and a non-empty unit. Returns
+ * undefined when there is no usable size or count (a bare unit says nothing), so a package
+ * never fails the output schema.
+ */
+export function sanitizePackage(pkg: { count?: unknown; size?: unknown; unit?: unknown } | undefined): ParsedPackage | undefined {
+  if (!pkg) return undefined;
+  const out: ParsedPackage = {};
+  const usable = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n) && n > 0;
+  if (usable(pkg.count)) out.count = pkg.count;
+  if (usable(pkg.size)) out.size = pkg.size;
+  const unit = typeof pkg.unit === 'string' ? normalizeUnit(pkg.unit) : undefined;
+  if (out.count === undefined && out.size === undefined) return undefined;
+  if (unit) out.unit = unit;
+  return out;
+}
+
 /** Parse "2X32 OZ", "1 GAL", "24 CT", "1/2 GAL" and similar into a package. */
 export function parsePackage(raw: string): ParsedPackage | undefined {
   const multi = new RegExp(`\\b(\\d+)\\s*[xX]\\s*${NUMBER_PATTERN}\\s*${UNIT_PATTERN}\\b`, 'i').exec(raw);
   if (multi) {
-    return { count: Number(multi[1]), size: parseNumber(multi[2]!), unit: normalizeUnit(multi[3]) };
+    return sanitizePackage({ count: Number(multi[1]), size: parseNumber(multi[2]!), unit: normalizeUnit(multi[3]) });
   }
   const single = new RegExp(`\\b${NUMBER_PATTERN}\\s*${UNIT_PATTERN}\\b`, 'i').exec(raw);
-  if (single) return { size: parseNumber(single[1]!), unit: normalizeUnit(single[2]) };
+  if (single) return sanitizePackage({ size: parseNumber(single[1]!), unit: normalizeUnit(single[2]) });
   return undefined;
 }
 

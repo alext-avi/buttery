@@ -67,12 +67,12 @@ Pass eval flags after `--`, or npm will swallow them.
 |---|---|
 | Structured output | Uses `response_format: {type: "json_schema"}`, generated from the Zod output schema. If a model rejects that with a 400, it is downgraded to `json_object` with the schema in the prompt, and the downgrade is remembered per model. The result is then Zod-validated. On failure there is **one repair retry** that includes the errors. If that also fails, the fallback runs. |
 | Output hygiene | Before validation, fields that carry no information are dropped, without recording a violation: `""` ids, zero or negative numbers, `recipe_id`/`servings` on activities other than `cooked`, `to_location` on kinds that don't move food, and zero package fields. See the Crusoe notes for why. |
-| Constrained choices | A `match.food_id` outside that line's candidates becomes `'new'`/`low`. Unknown or duplicate `line_id`s are dropped, and omitted lines are filled by the fallback. `parseActivity` drops unknown `lot_id`s (keeping `food_name`), unknown `recipe_id`s and unknown ambiguity candidates. `rankRecipes` returns every candidate exactly once: unknown ids are dropped, duplicates removed, and missing ids appended in input order. Ideas are dropped when `include_ideas` is false. |
+| Constrained choices | A `match.food_id` outside that line's candidates becomes `'new'`/`low`. Unknown or duplicate `line_id`s are dropped, and omitted lines are filled by the fallback. `parseActivity` drops unknown `lot_id`s (keeping `food_name`; each drop lowers confidence one level and adds a `"could not be matched to a known lot"` ambiguity, so the parse is never auto-applied against an invented lot), unknown `recipe_id`s and unknown ambiguity candidates. `rankRecipes` returns every candidate exactly once: unknown ids are dropped, duplicates removed, and missing ids appended in input order. Ideas are dropped when `include_ideas` is false. |
 | Safety clamps | `SHELF_LIFE_DEFAULTS` holds 27 categories × 5 states with `{days, max}`. An estimate above `max` is clamped, including `null` ("no expiry") where a max exists, and its confidence drops one level. Missing requested states are filled from defaults. |
 | Timeouts | 20 s for `canonicalizeItems`, 8 s for the others, covering the whole call including the repair. A timeout, network error, HTTP error or caller abort leads to the fallback. |
-| Fallbacks | canonicalize: rule-based name, category and package, then exact alias → `high`, trigram ≥ 0.55 → `medium`, otherwise `'new'`/`low`. shelf life: the defaults table at `low` confidence. parse: no activities plus one `"couldn't parse"` ambiguity at `low`. rank: input order, empty explanations, no ideas. |
-| Cache | Key is `function:model:inputHash`. The default is in-memory per provider; `ctx.cache` overrides it. Hits return `path: 'cache'`. Only model and repair results are cached. |
-| Privacy | Input schemas strip unknown fields. Emails, phone numbers and street addresses in any string are redacted before hashing, sending and recording. |
+| Fallbacks | canonicalize: rule-based name, category and package, then exact alias → `high`, trigram ≥ 0.55 → `medium`, otherwise `'new'`/`low`. shelf life: the defaults table at `low` confidence. parse: no activities plus one `"couldn't parse"` ambiguity at `low`. rank: input order, empty explanations, no ideas. The final output is re-validated after guards on every path. Guarded model output that fails is replaced by the fallback, and a fallback that would fail is replaced by a minimal valid output, so only invalid *input* throws. |
+| Cache | Key is `function:model:inputHash`. The default is in-memory per provider; `ctx.cache` overrides it. Hits return `path: 'cache'`. Only model and repair results are cached. Cache errors are never fatal: a failing `get` is a miss, and a failing `set` keeps the model result and its path. |
+| Privacy | Input schemas strip unknown fields. Emails, phone numbers and street addresses in free-text strings are redacted before hashing, sending and recording. Id fields (`*_id`, `*_ids`) are left untouched. An address is a 2–6 digit house number, one to three capitalized words and a street suffix (`1234 Elm Street`); a number followed by a unit (`12 OZ DR PEPPER`) or lowercase text (`3 lb Lane cake`) is never an address. |
 
 ## Crusoe notes
 
@@ -206,7 +206,11 @@ the brief.
 7. **Per-function model defaults.** Section 6 says "one model is the default, with
    per-function overrides". The package also ships one built-in override
    (`parseActivity` → DeepSeek-V4-Pro). Env settings still win.
-8. **Additive exports:** `createFallbackProvider`, `createMemoryCache`, `configFromEnv`, `DEFAULT_MODEL`, `DEFAULT_MODELS`,
+8. **Input shapes.** `canonicalizeItems` `hint.package` accepts the server's object
+   `{count?, size?, unit?}` or a printed string (`"2X32 OZ"`); unusable values (zero, negative,
+   non-finite, empty unit) are dropped rather than rejected. `estimateShelfLife` `states` are
+   deduped (first occurrence wins).
+9. **Additive exports:** `createFallbackProvider`, `createMemoryCache`, `configFromEnv`, `DEFAULT_MODEL`, `DEFAULT_MODELS`,
    `FOOD_CATEGORIES`, `FOOD_STATES`, `categoryDefaults`, `DEFAULT_TIMEOUTS_MS`,
    `ReasoningInputError`, and a Zod schema for every input and output (`*Schema`).
    `createFakeProvider` takes an optional second `{now, timeoutsMs}` argument.

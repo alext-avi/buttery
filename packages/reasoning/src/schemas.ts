@@ -38,7 +38,14 @@ export const CanonicalizeInputSchema = z.object({
         hint: z
           .object({
             food_name: z.string().optional(),
-            package: z.string().optional(),
+            // The server sends {count?, size?, unit?}; a printed string ("2X32 OZ") is also accepted.
+            // Values are hints only: unusable numbers are dropped, never rejected.
+            package: z
+              .union([
+                z.string(),
+                z.object({ count: z.number().optional(), size: z.number().optional(), unit: z.string().optional() }),
+              ])
+              .optional(),
             location_guess: z.string().optional(),
           })
           .optional(),
@@ -72,7 +79,11 @@ export const ShelfLifeInputSchema = z.object({
   food_name: z.string().min(1),
   category: z.string().optional(),
   perishability: PerishabilitySchema.optional(),
-  states: z.array(FoodStateSchema).min(1),
+  // Deduped (first occurrence wins): the per-call model schema lists each state once as required.
+  states: z
+    .array(FoodStateSchema)
+    .min(1)
+    .transform((states) => [...new Set(states)]),
   location: z.string().optional(),
   anchor_date: z.string().optional(),
 });

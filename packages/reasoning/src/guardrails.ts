@@ -152,6 +152,9 @@ export function guardParseActivity(
   const violations: string[] = [];
   const lots = new Map(input.context.lots.map((l) => [l.lot_id, l]));
   const recipes = new Set(input.context.recipes.map((r) => r.recipe_id));
+  // Items whose invented lot_id was dropped: each becomes an ambiguity, so the parse is not
+  // auto-applied (spec Section 7) against a lot the model made up.
+  const unmatched: string[] = [];
 
   const activities = output.activities.map((raw) => {
     // Guided decoding sometimes fills an optional id with "" instead of omitting it.
@@ -159,7 +162,8 @@ export function guardParseActivity(
     const items = activity.items.map((rawItem) => {
       const item = rawItem.lot_id === '' ? withoutKey(rawItem, 'lot_id') : rawItem;
       if (item.lot_id === undefined || lots.has(item.lot_id)) return item;
-      violations.push(`parseActivity: dropped unknown lot_id "${item.lot_id}"`);
+      violations.push(`parseActivity: dropped unknown lot_id "${item.lot_id}"; confidence lowered, ambiguity added`);
+      unmatched.push(item.food_name ?? input.text);
       const { lot_id: _dropped, ...rest } = item;
       return rest;
     });
@@ -178,8 +182,12 @@ export function guardParseActivity(
     }
     return { ...a, candidate_lot_ids: ids };
   });
+  for (const text of unmatched) {
+    ambiguities.push({ text, reason: 'could not be matched to a known lot', candidate_lot_ids: [] });
+  }
+  const confidence = unmatched.length > 0 ? lowerConfidence(output.confidence) : output.confidence;
 
-  return { output: { ...output, activities, ambiguities }, violations };
+  return { output: { ...output, activities, ambiguities, confidence }, violations };
 }
 
 function withoutKey<T extends object>(value: T, key: keyof T): T {
