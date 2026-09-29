@@ -16,7 +16,6 @@ import { verdictFor } from './verdict';
 type Deps = Pick<AppDeps, 'db' | 'config'>;
 export const STALE_AFTER_DAYS = 7;
 export const DEFAULT_LOCATIONS = ['fridge', 'freezer', 'pantry', 'counter'];
-const URGENCY_ORDER = { expired: 0, urgent: 1, soon: 2, later: 3 } as const;
 
 async function context(deps: Deps, p: Principal, now: Date) {
   const household = await getHousehold(deps.db, p.householdId);
