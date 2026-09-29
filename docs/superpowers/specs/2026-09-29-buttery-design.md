@@ -9,8 +9,11 @@ Buttery is a **household food ledger that agents operate**. People use it mainly
 AI agents (Claude on web/mobile/desktop, Claude Code, Codex, agentdock workers, any MCP
 client). The application owns the authoritative records and the rules: what the household
 believes it has, the evidence behind each belief, what changed and who changed it.
-The connected agent does perception (reading photos, receipts, screenshots) and judgment
-(choosing or inventing recipes). A small mobile web UI handles the things that are faster
+The connected agent does perception (reading photos, receipts, screenshots) and
+conversation. A server-side **reasoning module backed by Crusoe Managed Inference**
+does the text reasoning that must be consistent regardless of which agent is connected:
+canonicalizing item names, estimating shelf life with confidence, parsing free-text
+events, and ranking what to cook. A small mobile web UI handles the things that are faster
 by touch: reviewing proposals, correcting an item, following a recipe, checking off a list.
 
 ### Product principles
@@ -41,38 +44,73 @@ agent conversations; four web views (review, inventory, recipe, shopping list);
 household/member identity model.
 
 **Out (for now):** barcode scanning, nutrition/macros, meal-plan calendars, grocery-store
-APIs and price tracking, server-side LLM calls, native apps, push notifications, sharing
-outside the household.
+APIs and price tracking, server-side image interpretation (stretch goal, Section 11), native
+apps, push notifications, sharing outside the household.
 
 ## 2. Key decisions
 
 | Decision | Choice | Rationale / tradeoff |
 |---|---|---|
-| Image interpretation & recipe reasoning | **Connected agent.** The server validates, normalizes units, matches against the catalog and lots, computes coverage and shopping math, estimates expiry from rules, and enforces policy. | No server LLM keys or spend; works with any client; deterministic parts are testable. Cost: extraction quality varies by client model. A server-side extraction path for web-uploaded photos can be added later. |
-| Image bytes | Agents send a structured transcription (e.g. receipt lines verbatim), which is the stored evidence. The original photo can optionally be attached from the review page (Phase 2). | MCP clients generally cannot forward a user's attached image to a tool as bytes. |
-| Automation | **Server-enforced household policy** (Section 6). | Keeps MCP and web consistent; an agent cannot bypass review of photo inferences. |
+| Perception (images) | **Connected agent.** It transcribes what it sees (receipt lines verbatim, visible items and levels, recipe text). Its interpretations are optional *hints*. | The user's image is already in the agent's context. MCP clients generally cannot forward image bytes to a tool. |
+| Text reasoning | **Server-side reasoning module on Crusoe Managed Inference** (Section 6): canonicalize items and match them to inventory, estimate shelf life with confidence, parse free-text events, rank and explain recipes. Model configurable per function. | Consistent results no matter which agent or client is connected, and available to the web UI and thin clients. Crusoe is a clearly bounded component. Cost: latency, spend, and an external dependency, all mitigated by caching, deterministic fallbacks and batching. |
+| Trust boundary for model output | Model output is **never committed directly**. It becomes proposal ops or *estimated* fields with confidence and a basis that names the model. The domain layer validates and clamps it, and the automation policy applies unchanged. | Keeps "evidence vs. belief" intact: an LLM guess is recorded as an estimate, never as a fact. |
+| Deterministic core | Unit math, coverage, lot selection, idempotency, policy and undo stay in plain code. | Testable, and correct when Crusoe is unavailable. |
+| Image bytes | Agents send structured transcriptions, which become the stored evidence. The original photo can optionally be attached from the review page (Phase 2). | See Perception. |
+| Automation | **Server-enforced household policy** (Section 7). | Keeps MCP and web consistent; an agent cannot bypass review of photo inferences. |
 | Duplicate protection | Idempotency keys + receipt fingerprints + optimistic item versions + shopping-completion reconciliation. | Agents don't reliably reuse keys on retry, so content-based dedup is also required. |
 | Identity | Household = tenant; user = member; connection = OAuth client or personal access token tied to a user. Every change records actor user and client. MCP server is an **OAuth 2.1 resource server**; **WorkOS AuthKit** is the authorization server (supports Dynamic Client Registration for claude.ai connectors). PATs for CLIs and agentdock workers. | Multi-member households need no migration later. Avoids writing a custom authorization server. Alternative (embedded AS) rejected for security surface. |
 | Web access | AuthKit login session as a long-lived cookie. Agents return plain deep links. | Links in chat history grant nothing by themselves. Object-scoped no-login links can be added later if phone login proves annoying. |
 | Storage | **PostgreSQL 17** in a container. | Transactions spanning state + change log; unique constraints for idempotency/fingerprints; `SELECT … FOR UPDATE`; joins for coverage; `jsonb` for observation payloads. Row-level security available later for tenant isolation. |
 | State model | Current-state tables + append-only change log written in the same transaction. Undo = compensating change set. | Full event sourcing rejected: rebuild/projection machinery without MVP benefit. |
-| Hosting | Docker Compose (`app` + `postgres`) on this Mac, joined to the agentdock Docker network; public HTTPS via **Tailscale Funnel**. | Phone access from day one at zero cost. Risk: unavailable when the Mac sleeps; the container moves unchanged to an always-on host later. |
+| Hosting | Docker Compose (`app` + `postgres`) on this Mac, joined to the agentdock Docker network; public HTTPS via **Tailscale Funnel**. **Nice-to-have:** the same Compose stack on a Crusoe Cloud VM. | Phone access from day one at zero cost. Risk: unavailable when the Mac sleeps. Moving to a Crusoe Cloud VM fixes that and keeps the whole stack on the sponsor's platform. |
 
 ## 3. Architecture
 
+```mermaid
+flowchart LR
+  subgraph Clients["Agents & browsers"]
+    C1["Claude web / mobile / desktop"]
+    C2["Claude Code · Codex CLI"]
+    C3["agentdock workers"]
+    B["Phone browser<br/>(review links)"]
+  end
+
+  subgraph App["Buttery app container"]
+    MCP["/mcp<br/>MCP Streamable HTTP"]
+    API["/api + React SPA"]
+    SVC["Services<br/>(use cases)"]
+    DOM["Domain rules<br/>units · expiry · coverage<br/>lot selection · policy · undo"]
+    RSN["Reasoning module<br/>canonicalize · shelf life<br/>parse events · rank recipes"]
+  end
+
+  PG[("PostgreSQL<br/>state + change log<br/>+ reasoning calls")]
+  CRU["Crusoe Managed Inference<br/>(open models, configurable)"]
+  AUTH["WorkOS AuthKit<br/>(OAuth AS · login)"]
+
+  C1 & C2 & C3 -- "HTTPS · Tailscale Funnel" --> MCP
+  B --> API
+  MCP --> SVC
+  API --> SVC
+  SVC --> DOM
+  SVC --> RSN
+  RSN -- "OpenAI-compatible API" --> CRU
+  SVC --> PG
+  MCP -. "token validation" .-> AUTH
+  API -. "session login" .-> AUTH
 ```
-Claude (web/mobile/desktop) ─┐
-Claude Code / Codex CLI ─────┼── HTTPS (Tailscale Funnel) ──► app container ──► postgres container
-agentdock workers ───────────┘      (docker network)            │
-Phone browser (review links) ───────────────────────────────────┘
-                                   AuthKit (OAuth AS, login)
-```
+
+Model output from the reasoning module passes back through the services layer, which validates it with domain rules
+before it can become a proposal op or an estimated field. The reasoning module never
+writes to the database directly, apart from logging its own calls.
 
 Monorepo (npm workspaces, TypeScript, Node 26):
 
 - **`packages/domain`** — Zod schemas and pure domain rules: quantity/unit math, expiry
   estimation, matching, coverage, policy evaluation, attention computation. Shared by the
   server and the web app (schemas for form validation).
+- **`packages/reasoning`** — the Crusoe-backed reasoning module (Section 6). It exposes four
+  typed functions behind a `ReasoningProvider` interface. Implementations: `crusoe`
+  (OpenAI-compatible client), `fallback` (deterministic heuristics), `fake` (tests).
 - **`apps/server`** — Hono on Node.
   - `/mcp` — MCP Streamable HTTP (`@modelcontextprotocol/sdk`), bearer-token protected;
     `/.well-known/oauth-protected-resource` metadata pointing at AuthKit.
@@ -90,7 +128,9 @@ Monorepo (npm workspaces, TypeScript, Node 26):
   Playwright for web views at a phone viewport.
 
 Configuration via environment: `DATABASE_URL`, `PUBLIC_BASE_URL` (used for all links),
-AuthKit client id/secret/domain, session secret.
+AuthKit client id/secret/domain, session secret, `REASONING_PROVIDER` (`crusoe|fallback`),
+`CRUSOE_API_KEY`, `CRUSOE_BASE_URL`, `REASONING_MODEL` (default) and optional per-function
+overrides (`REASONING_MODEL_CANONICALIZE`, `_SHELF_LIFE`, `_PARSE`, `_RANK`).
 
 ## 4. Domain model
 
@@ -114,14 +154,16 @@ A user with several households has a default household; tools accept an optional
 - `category` (e.g. dairy, eggs, poultry, leafy produce, condiment…)
 - `perishability: shelf_stable | perishable`
 - `shelf_life_days: {sealed?, opened?, frozen?, thawed?, prepared?}` each with
-  `source: default_rule | agent_estimate | user`
+  `{days, confidence: high|medium|low, source: default_rule | model_estimate | agent_hint | user, reasoning_call_id?}`
 - `default_location`, `default_package {count?, size?, unit?}`
 - `is_staple` (assumed present unless marked out)
 - `density_g_per_ml?` (enables volume↔mass conversion)
 
 A built-in table provides category defaults (≈20 categories) for shelf life and
-perishability. Agents may supply estimates when creating a food; they are stored with
-`source: agent_estimate`.
+perishability, including **safety bounds** (a maximum number of days per category and state).
+When a food is created, the reasoning module estimates shelf life per state
+(`source: model_estimate`, clamped to the bounds). Estimates are cached on the food, so the
+model is not called per lot. User-entered values always win.
 
 ### Inventory: `lots`
 
@@ -131,7 +173,9 @@ One row per purchase or batch; multiple lots of one food are normal.
 - `state: sealed | opened | frozen | thawed | prepared` (prepared = leftovers)
 - `quantity: {kind: exact|approx|unknown, amount?, unit?}` and optional
   `package {count, size, unit}` so "half of a 1-gal jug" is expressible
-- `expires: {on, kind: printed|estimated, basis}`; `printed_expiry_on?` retained separately
+- `expires: {on, kind: printed|estimated, confidence: high|medium|low, basis}`; `printed_expiry_on?`
+  retained separately. Printed dates are `high` confidence. An estimate inherits the confidence
+  of the shelf-life value it came from.
 - `acquired_at`, `opened_at?`, `frozen_at?`, `thawed_at?`
 - `last_evidence_at`, `last_evidence_observation_id`
 - `status: active | depleted | discarded`
@@ -142,7 +186,8 @@ One row per purchase or batch; multiple lots of one food are normal.
 - Sealed with a printed date → printed.
 - Otherwise estimated: anchor + `shelf_life_days[state]`, where anchor is `acquired_at`
   (sealed), `opened_at` (opened), `frozen_at` (frozen), `thawed_at` (thawed), or the cook
-  time (prepared). The basis string records the computation, e.g. `"opened 9/27 + 5d (default_rule)"`.
+  time (prepared). The basis string records the computation, e.g.
+  `"opened 9/27 + 5d (model_estimate, crusoe:<model>, medium)"`.
 - Shelf-stable foods with no printed date have no expiry. Opening a shelf-stable food with
   an `opened` shelf life makes the lot perishable from that point (e.g. pasta sauce).
 - Freezing keeps `printed_expiry_on` but switches the effective expiry to the frozen estimate.
@@ -154,7 +199,8 @@ One row per purchase or batch; multiple lots of one food are normal.
 
 - `kind: receipt | pantry_photo | meal_photo | recipe_capture | user_statement | shopping_completion | web_correction`
 - `observed_at` (when it was true), `recorded_at`, `actor_user_id`, `connection_id`
-- `payload jsonb` validated per kind. Receipt payload: `store, purchased_at, receipt_number?, total_cents?, lines[{raw_text, description?, quantity?, unit_price_cents?, price_cents?, interpretation{food_name, category?, perishability?, package?, location_guess?, shelf_life_estimate_days?, is_food}}]`
+- `payload jsonb` validated per kind. Receipt payload: `store, purchased_at, receipt_number?, total_cents?, lines[{raw_text, quantity?, unit_price_cents?, price_cents?, line_kind?: item|coupon|return|non_food, hint?{food_name?, package?, location_guess?}}]`.
+  The agent's verbatim transcription is the evidence; `hint` is optional and is passed to canonicalization as context only.
 - `fingerprint?` — receipts: hash of normalized store + purchased_at (to the minute) +
   total_cents + receipt_number if present; unique per household
 - `attachment_id?`, `status: open | resolved`
@@ -190,6 +236,13 @@ Append-only.
 - **`got` means "in the cart / acquired for this list" and never changes inventory.**
   Inventory changes only through `complete_shopping` or a receipt.
 
+### Reasoning provenance: `reasoning_calls`
+
+`(id, household_id, function, provider, model, input_hash, input jsonb, output jsonb, valid, latency_ms, tokens_in, tokens_out, error?, created_at)`.
+Proposal ops, food shelf-life values and parsed activities reference `reasoning_call_id`.
+This lets "what evidence supports this belief?" show exactly which model produced which estimate.
+`(function, model, input_hash)` also works as a cache.
+
 ### Idempotency: `idempotency_records`
 
 `(household_id, tool, key)` unique; stores the request hash and response. Same key with the
@@ -219,8 +272,9 @@ reported in the response.
 ## 5. MCP interface
 
 The server's MCP `instructions` explain the operating model to every client: start with
-`get_household_summary`; never infer absence from a photo; use `log_activity` for clear
-user statements and `submit_observation` for interpretations of images; always give the
+`get_household_summary`; never infer absence from a photo; transcribe images verbatim and
+let the server canonicalize; use `log_activity` when you can structure a clear statement
+yourself and `log_text` to pass the user's words through unchanged; use `submit_observation` for images; always give the
 user the returned review link; report lot-selection assumptions and offer undo.
 
 ### Response conventions
@@ -231,7 +285,7 @@ user the returned review link; report lot-selection assumptions and offer undo.
   and `next` hints.
 - Every state-changing tool requires `idempotency_key`.
 
-### Tools (21)
+### Tools (22)
 
 **Identity**
 - `whoami` — user, household(s), connection, preferences digest.
@@ -249,6 +303,11 @@ user the returned review link; report lot-selection assumptions and offer undo.
 - `submit_observation(kind, observed_at, payload, location?, idempotency_key)` → `{observation, proposal, duplicate_of?, review_url, auto_applied[]}`
 - `log_activity(kind: bought|cooked|used|finished|discarded|froze|thawed|opened|moved, items[{food|lot_id, quantity?, to_location?}], recipe_id?, servings?, leftovers?, note?, idempotency_key)`
   → applied change set + undo handle + assumptions; unresolved parts go to attention.
+- `log_text(text, idempotency_key)` — free-text events ("we used half the milk, froze the
+  chicken"). Parsed by the reasoning module (`parseActivity`) into the same `log_activity`
+  structures and stored as a `user_statement` observation with the verbatim text.
+  High-confidence parsed activities are applied under the same policy as `log_activity`. Low-confidence or
+  ambiguous ones become a proposal with a review link. The web inventory view has the same "quick log" box.
 - `resolve_proposal(proposal_id, decisions[{op_id, accept|reject|edit, edits?}]?, apply: bool, idempotency_key)`
 - `correct_item(lot_id, fields, reason, idempotency_key)`
 - `undo(change_set_id, idempotency_key)`
@@ -258,8 +317,10 @@ user the returned review link; report lot-selection assumptions and offer undo.
 - `save_recipe(recipe, source, idempotency_key)` → id + link
 - `update_recipe(recipe_id, patch, idempotency_key)` → new revision
 - `get_recipe(recipe_id, servings?)` → scaled recipe + coverage + link
-- `find_recipes(query?, max_total_min?, effort?, diet_tags?, prioritize_expiring=true, limit?)`
-  → ranked saved recipes with coverage and which expiring lots each would use.
+- `find_recipes(query?, max_total_min?, effort?, diet_tags?, prioritize_expiring=true, include_ideas=false, limit?)`
+  → ranked saved recipes with coverage, which expiring lots each would use, and a short
+  explanation per recipe. With `include_ideas`, also returns unsaved recipe ideas generated
+  by the reasoning module (labeled `generated`, `generator: crusoe:<model>`).
 
 **Shopping**
 - `build_shopping_list(recipes[{recipe_id, servings}], list_id?, include_optional=false, idempotency_key)`
@@ -272,16 +333,58 @@ user the returned review link; report lot-selection assumptions and offer undo.
 
 ### Recipe ranking
 
-Score = coverage (fraction of essential ingredients `covered`/`staple_assumed`, partial
-counts half) + expiring bonus (weighted by urgency of lots used) − penalty for `missing`
-essentials; filtered by time/effort/diet. Returned with the per-ingredient breakdown so the
-agent can explain. Generated ideas are the agent's; saving one sets `source.kind = generated`.
+Two stages:
+1. **Deterministic score** (domain): coverage (fraction of essential ingredients
+   `covered`/`staple_assumed`, partial counts half) + expiring bonus (weighted by urgency of
+   lots used) − penalty for `missing` essentials; filtered by time/effort/diet. This alone
+   produces a correct ranking.
+2. **Reasoning re-rank** (`rankRecipes`): the top ~15 candidates plus the use-soon lots go to
+   the model. It may reorder within the list, writes one-line explanations, and optionally
+   proposes ideas. It cannot add saved recipes that weren't candidates or change coverage facts.
 
-## 6. Automation policy (household preferences, server-enforced)
+Saving a generated idea sets `source.kind = generated`, keeping `generator`.
+
+## 6. Reasoning module (Crusoe Managed Inference)
+
+A small internal module with four functions. Each has a Zod input and output schema, a prompt
+template, a model setting, a deterministic fallback, and a logged call record.
+
+| Function | Input | Output | Used by | Fallback |
+|---|---|---|---|---|
+| `canonicalizeItems` | Receipt/free-text lines (verbatim + optional agent hints) and, per line, a server-built **candidate shortlist** of existing foods and active lots (alias, name and trigram matches) | Per line: `canonical_name`, `category`, `perishability`, `package`, `line_kind`, `match: {food_id | "new", confidence}`, rationale | `submit_observation` (receipt), `log_text` | Alias/trigram match only; unmatched → `create_food` op at `low` confidence |
+| `estimateShelfLife` | Food name, category, storage state and location, anchor date | Days per state, `confidence`, short rationale | Food creation; state changes where the food lacks a value for the new state | Category default table |
+| `parseActivity` | Verbatim text + compact context (recent and active lots, locations, known recipes) | `activities[]` matching the `log_activity` schema, `ambiguities[]`, `confidence` | `log_text`, web quick log | None. Text is stored as an observation and routed to review with "couldn't parse" |
+| `rankRecipes` | Deterministic top candidates with coverage, use-soon lots, constraints | Reordered ids, explanations, optional `ideas[]` | `find_recipes` | Deterministic order; no explanations or ideas |
+
+**Guardrails**
+- **Constrained choices:** matching picks from the server's shortlist or `"new"`. A `food_id`
+  not in the shortlist is rejected. The model can't invent inventory.
+- **Validation:** structured JSON output, validated with Zod. One repair retry, then the fallback.
+  Every result records `valid` and which path produced it.
+- **Safety clamps:** shelf-life estimates are clamped to category bounds, and a clamp lowers
+  confidence. The server never extends a *printed* date.
+- **Not facts:** outputs only ever become proposal ops or `estimated` values carrying
+  `confidence` and a basis naming the model. The Section 7 policy decides what applies automatically.
+- **Performance:** one batched call per receipt. Results are cached by `(function, model, input_hash)`.
+  Learned aliases skip the model entirely next time, so costs fall as the catalog grows.
+  Timeouts: 20s for canonicalization, 8s for the others. On timeout the fallback runs and the
+  response says so.
+- **Privacy:** only food text, dates and locations are sent. No names, emails or receipt
+  store addresses.
+
+**Provider:** `crusoe` is an OpenAI-compatible chat completions client. Base URL and model
+IDs are configured by env and confirmed against Crusoe's docs in Phase 0. One model is the
+default, with per-function overrides so each function can use a fast or a strong model. The `fake`
+provider returns scripted outputs for deterministic tests. An evaluation script runs the
+fixtures in `tests/fixtures/food-images/sources/expected-text.json` through `canonicalizeItems`
+and reports match accuracy per model.
+
+## 7. Automation policy (household preferences, server-enforced)
 
 | Source | Default | Notes |
 |---|---|---|
 | `log_activity` (direct statement) | Apply | Ambiguity (multiple lots) resolved by lot-selection rule and reported; no match → nothing applied, candidates returned. |
+| `log_text` (free text, parsed by the reasoning module) | Apply if parse confidence is `high` and there are no ambiguities; otherwise review | The verbatim text is always stored as evidence. |
 | `log_activity cooked` consumption | Apply as approximate | Quantities marked `approx`; unit-incompatible or ambiguous ingredients go to attention. |
 | Receipt | **Review all** (slice 1) | Later option: auto-apply `high` confidence ops, review the rest. |
 | Pantry/fridge photo | Review | `flag_not_seen` never depletes a lot. |
@@ -292,14 +395,21 @@ agent can explain. Generated ideas are the agent's; saving one sets `source.kind
 Use-soon windows (defaults): **urgent ≤ 2 days**, **soon ≤ 7 days**, plus expired.
 `stale_after_days` default 7.
 
-## 7. Workflows
+## 8. Workflows
 
-**W1 Receipt intake (slice 1).** User shares a Costco receipt → agent transcribes lines
-verbatim with interpretations → `submit_observation(receipt)` → server fingerprints,
-matches aliases/foods/lots, builds a proposal (`add_lot`, `create_food`+`add_lot`,
-`ignore_line` for non-food, `confirm_purchase` when a recent shopping completion matches) →
-responds with counts and `review_url` → review page shows raw line ↔ interpretation with
-inline edits for food, quantity, location, expiry → apply → aliases learned.
+**W1 Receipt intake (slice 1).**
+1. User shares a Costco receipt. The agent transcribes lines verbatim, with optional hints,
+   and calls `submit_observation(receipt)`.
+2. The server fingerprints the receipt. Lines matching a learned alias resolve deterministically.
+   The rest go to **Crusoe `canonicalizeItems`** in one batched call, with candidate shortlists.
+   New foods get **Crusoe `estimateShelfLife`**, clamped to category bounds.
+3. The server builds a proposal: `add_lot`, `create_food`+`add_lot`, `ignore_line` for non-food
+   and coupons, and `confirm_purchase` when a recent shopping completion matches. Each op carries
+   confidence, a rationale and its `reasoning_call_id`.
+4. The response gives counts and a `review_url`. The review page shows each raw line next to
+   its canonical item, a confidence badge, and an estimated expiry with its basis. Food,
+   quantity, location and expiry can be edited inline.
+5. Apply → aliases learned, so the next receipt skips the model for those lines.
 *Mistakes:* same receipt again → `duplicate_of` + same link, nothing new; retry → stored
 response; wrong match → edit in review, or `correct_item`/`undo` after commit; partial
 review → accepted ops applied, rest stay pending in attention; refund/return lines →
@@ -309,8 +419,10 @@ flagged, not applied.
 expiring, what's pending; `search_inventory`/`get_item` answer why we believe it.
 
 **W3 Direct statements.** "Threw out the spinach", "moved the chicken to the freezer",
-"finished the milk" → `log_activity` → applied with undo; freezing/opening recomputes
-estimated expiry with a recorded basis. *Mistakes:* multiple lots → lot-selection rule,
+"finished the milk" → `log_activity`, or `log_text` with the user's exact words, which
+Crusoe `parseActivity` parses → applied with undo. Freezing or opening recomputes the
+estimated expiry with a recorded basis. "We used half the milk" becomes an approximate
+`consume` of 50% of the selected lot. *Mistakes:* multiple lots → lot-selection rule,
 assumption reported; no match → candidates returned, agent asks.
 
 **W4 Fridge/pantry photo.** Agent lists visible items with approximate levels and readable
@@ -319,8 +431,9 @@ dates → proposal of `confirm_present`, approximate `adjust_quantity`, low-conf
 location → review link.
 
 **W5 What to cook.** "Something in 30 minutes using what's expiring" →
-`find_recipes(prioritize_expiring, max_total_min=30)` plus summary use-soon → agent ranks,
-may add generated ideas labeled as such.
+`find_recipes(prioritize_expiring, max_total_min=30, include_ideas)` → deterministic
+score, re-ranked and explained by Crusoe `rankRecipes`, with generated ideas labeled as
+such → the agent presents them and may add its own.
 
 **W6 Recipe capture.** Screenshot → agent extracts → `save_recipe(source=screenshot,
 origin=extracted)` → recipe link; web edits create revisions; unmapped ingredients allowed.
@@ -336,13 +449,15 @@ ingredients to attention. *Mistakes:* "only used half the chicken" → `correct_
 
 **W9 Meal photo (Phase 5).** Low-confidence consumption proposals plus suggestions.
 
-## 8. Web views
+## 9. Web views
 
 All mobile-first, reachable by deep link, minimal navigation (a small top bar: Inventory ·
 Lists · Recipes).
 
 - **Review** `/review/:proposalId` — observation header (source, time, who, via which
-  client); ops grouped (new foods, matched, needs decision, ignored); per-op inline edit;
+  client); ops grouped (new foods, matched, needs decision, ignored); each op shows its
+  confidence badge and rationale. Estimated expiries show their basis ("est. Thu · medium ·
+  Crusoe <model>"). Inline edit per op;
   Accept all / apply selected; conflicts shown inline.
 - **Inventory** `/inventory` — default view "Use soon" (expired / urgent / soon, each lot
   with printed/est badge and evidence age), then by location; quick actions per lot
@@ -354,19 +469,30 @@ Lists · Recipes).
   tap to toggle `got`; add item; "Done shopping" (explains that it records approximate
   purchases).
 
-## 9. Phased plan and acceptance criteria
+## 10. Phased plan and acceptance criteria
 
 **Phase 0 — Foundations.** Monorepo; Compose (app + postgres) on the agentdock network;
 migrations; identity tables; AuthKit OAuth + protected-resource metadata; PAT creation via
-CLI script; `whoami`; Tailscale Funnel.
-✅ `docker compose up` works from a clean checkout. ✅ Claude Code calls `whoami` with a
+CLI script; `whoami`; Tailscale Funnel; `packages/reasoning` skeleton with the Crusoe
+provider, `fake` provider and `reasoning_calls` logging.
+✅ `docker compose up` works from a clean checkout. ✅ `npm run reasoning:ping` gets a
+schema-valid response from the configured Crusoe model and logs a `reasoning_calls` row. ✅ Claude Code calls `whoami` with a
 PAT. ✅ An agentdock worker calls `whoami` with a PAT. ✅ claude.ai custom connector
 completes OAuth via the Funnel URL and `whoami` works from the phone.
 
 **Phase 1 — Receipt slice.** Foods, lots, observations, proposals, changes, idempotency;
 `submit_observation(receipt)`, `resolve_proposal`, `undo`, `get_household_summary`,
-`search_inventory`, `get_item`, `upsert_food`; review and inventory views; category shelf-life defaults.
+`search_inventory`, `get_item`, `upsert_food`; review and inventory views; category
+shelf-life defaults and bounds; Crusoe `canonicalizeItems` and `estimateShelfLife` with fallbacks.
 ✅ A real Costco receipt shared from the phone yields a review link that opens on the phone.
+✅ The fixture receipts in `tests/fixtures/food-images` produce correct `canonicalizeItems`
+output against `expected-text.json` for the purchase lines, not the coupon or non-food lines.
+The eval script reports accuracy per model.
+✅ With `REASONING_PROVIDER=fallback` or Crusoe unreachable, the same receipt still yields a
+proposal: lower confidence, and the response says the fallback was used.
+✅ The review page shows an estimated expiry with its confidence and basis naming the Crusoe model.
+The item's evidence trail links to the reasoning call.
+✅ The recaptured fixture receipt is detected as a duplicate of the clean one.
 ✅ Edit one line, reject one, apply → inventory shows lots with estimated expiries labeled "est."
 ✅ Resubmitting the same receipt creates nothing new (automated test).
 ✅ Retrying apply creates no duplicate changes (automated test).
@@ -374,9 +500,12 @@ completes OAuth via the Funnel URL and `whoami` works from the phone.
 ✅ A fresh Claude conversation and a Codex task via agentdock both answer "what's expiring this week" using only the summary.
 ✅ A second receipt with the same items matches via learned aliases at high confidence.
 
-**Phase 2 — Activity, corrections, use-soon.** `log_activity`, `correct_item`,
-`get_attention`, `get_changes`, `set_preferences`; expiry recomputation on
-open/freeze/thaw; pantry-photo proposals; use-soon view; optional photo attachment on review.
+**Phase 2 — Activity, corrections, use-soon.** `log_activity`, `log_text` (Crusoe
+`parseActivity`), web quick log, `correct_item`, `get_attention`, `get_changes`,
+`set_preferences`; expiry recomputation on open/freeze/thaw; pantry-photo proposals;
+use-soon view; optional photo attachment on review.
+✅ `log_text("we used half the milk and froze the chicken")` applies two changes. A
+deliberately ambiguous text ("threw out the old stuff") becomes a proposal, not a change.
 ✅ "Froze the chicken" changes its effective expiry with a recorded basis and is undoable.
 ✅ A fridge photo produces `flag_not_seen` without depleting anything.
 ✅ Use-soon lists fridge perishables by urgency with printed/est badges.
@@ -387,6 +516,8 @@ recipe view with scaling, substitutions, missing items.
 ✅ A web edit creates a revision.
 ✅ Unit tests cover coverage and conversion, including incompatible → `uncertain`.
 ✅ `find_recipes` names the expiring lots each recipe uses and ranks accordingly.
+✅ With Crusoe enabled, results include one-line explanations and labeled ideas. Disabling it
+leaves the deterministic order intact.
 
 **Phase 4 — Shopping.** `build_shopping_list`, `get/update_shopping_list`,
 `complete_shopping`; checklist view; `confirm_purchase` reconciliation.
@@ -401,13 +532,24 @@ recipe view with scaling, substitutions, missing items.
 **Phase 6 — Household sharing.** Invites, second member, per-person attribution in history
 and review views. (Identity model already supports it.)
 
-## 10. Risks and open questions
+## 11. Risks, open questions and stretch goals
 
-- **Mac availability:** Funnel URL is down when the Mac sleeps. Mitigation: move the
-  container to an always-on host when daily use starts.
-- **Receipt transcription quality** varies by client model; alias learning and the review
-  step contain the damage. Measure match rates on real Costco receipts in Phase 1.
+- **Mac availability:** the Funnel URL is down when the Mac sleeps. Mitigation: run the same
+  Compose stack on a Crusoe Cloud VM (stretch goal).
+- **Receipt transcription quality** still depends on the client's vision. Server-side
+  canonicalization makes interpretation consistent, but can't fix a misread line. Alias learning
+  and the review step contain the damage. Measure match rates on real Costco receipts in Phase 1.
+- **Crusoe model choice, latency and availability:** exact base URL, model IDs and
+  structured-output support are confirmed in Phase 0. Batching, caching, timeouts and
+  deterministic fallbacks keep every workflow working without it.
+- **Food-safety risk from model estimates:** mitigated by category bounds, clamping, confidence
+  labels, and never extending printed dates. The app states estimates as estimates.
+- **Receipt returns (open):** the fixture pack expects a return line to reduce or remove a matching lot after review.
+  The spec currently only flags returns. Proposal: a `return` line produces a review-only op
+  against the matched lot.
+- **Stretch:** server-side vision for web-uploaded receipt photos, if Crusoe offers a suitable
+  vision model; hosting on Crusoe Cloud.
 - **AuthKit + claude.ai connector compatibility** is validated first in Phase 0 before
   domain work depends on it; fallback is an embedded minimal authorization server.
-- **Tool count (21)** may be more than some clients handle well; revisit after Phase 3 by
+- **Tool count (22)** may be more than some clients handle well; revisit after Phase 3 by
   observing agent tool-selection errors.
