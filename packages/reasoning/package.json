@@ -1,0 +1,32 @@
+{
+  "name": "@buttery/reasoning",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Crusoe-backed reasoning module for Buttery: the only place the app talks to an LLM.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "engines": {
+    "node": ">=26"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "ping": "node --env-file-if-exists=../../.env scripts/ping.ts",
+    "eval": "node --env-file-if-exists=../../.env scripts/eval.ts"
+  },
+  "dependencies": {
+    "openai": "^7.24.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.2"
+  }
+}
