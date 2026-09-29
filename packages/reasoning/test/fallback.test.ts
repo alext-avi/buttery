@@ -165,6 +165,9 @@ describe('unit standards (text helpers)', async () => {
     ['KOMBUCHA GINGER 16FLOZ', { size: 16, unit: 'fl_oz' }],
     ['GR BEEF 85/15 2.25LB', { size: 2.25, unit: 'lb' }],
     ['got a dozen eggs', { size: 12, unit: 'ct' }],
+    ['KS 2% RDCD FAT MLK 2PK', { count: 2 }],
+    ['CRV 12PK', { count: 12 }],
+    ['PAPER TOWELS 12CT', { size: 12, unit: 'ct' }],
     ['12 ZUCCHINI', undefined],
     ['BAG 0.10', undefined],
   ])('parsePackage(%j)', (raw, expected) => {

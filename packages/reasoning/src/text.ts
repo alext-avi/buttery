@@ -135,13 +135,27 @@ export function parsePackage(raw: string): ParsedPackage | undefined {
   const sizes = [...text.matchAll(new RegExp(`\\b${NUMBER_PATTERN}\\s*${UNIT_PATTERN}(?![a-z])`, 'gi'))].map((m) => ({
     size: parseNumber(m[1]!),
     unit: normalizeUnit(m[2]),
+    pack: /^(pk|pack)$/i.test(m[2]!),
   }));
   if (sizes.length === 0) return undefined;
   // "12 PK DR PEPPER 12 FL OZ": a pack count plus a per-item size is a multipack.
   const count = sizes.find((s) => s.unit === 'ct');
   const measure = sizes.find((s) => s.unit !== 'ct');
-  if (count && measure && Number.isInteger(count.size)) return sanitizePackage({ count: count.size, ...measure });
-  return sanitizePackage(measure ?? sizes[0]);
+  if (count && measure && Number.isInteger(count.size)) return sanitizePackage({ count: count.size, size: measure.size, unit: measure.unit });
+  if (measure) return sanitizePackage({ size: measure.size, unit: measure.unit });
+  // A bare "2PK" is a number of packages, not an item count ("24 CT" is).
+  const only = sizes[0]!;
+  return only.pack && Number.isInteger(only.size) ? sanitizePackage({ count: only.size }) : sanitizePackage({ size: only.size, unit: only.unit });
+}
+
+/**
+ * Whether a model package is consistent with what is printed. A printed pack count alone
+ * ("2PK") only fixes `count`, so a model reading that adds a per-package size ("2 × 1 gal")
+ * agrees with it.
+ */
+export function consistentWithPrinted(printed: ParsedPackage, model: ParsedPackage | undefined): boolean {
+  if (printed.size === undefined) return model?.count === printed.count;
+  return samePackage(printed, model);
 }
 
 const TO_BASE: Record<PackageUnit, { unit: 'g' | 'ml' | 'ct'; factor: number }> = {

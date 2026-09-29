@@ -15,7 +15,7 @@ import type {
 } from './schemas.ts';
 import { fallbackCanonicalize, fallbackShelfLife, resolveCategory } from './fallback.ts';
 import { categoryDefaults } from './shelfLifeDefaults.ts';
-import { explicitLineKind, parsePackage, samePackage, sanitizePackage, standardizeCanonicalName } from './text.ts';
+import { consistentWithPrinted, explicitLineKind, parsePackage, sanitizePackage, standardizeCanonicalName } from './text.ts';
 
 export interface Guarded<T> {
   output: T;
@@ -136,12 +136,14 @@ function standardizeLine(
     violations.push(`canonicalizeItems: line "${line.line_id}" line_kind "${line.line_kind}" replaced by explicit marker "${marked}"`);
     rest.line_kind = marked;
   }
-  if (printed && !samePackage(printed, pkg)) {
+  if (printed && !consistentWithPrinted(printed, pkg)) {
     violations.push(
       `canonicalizeItems: line "${line.line_id}" package ${JSON.stringify(pkg ?? null)} replaced by printed size ${JSON.stringify(printed)}`,
     );
     pkg = printed;
   }
+  // A coupon's size is the product's, not the coupon's: keep it only when printed on the line.
+  if (rest.line_kind === 'coupon' && !printed) pkg = undefined;
   return { ...rest, canonical_name, ...(pkg ? { package: pkg } : {}) };
 }
 

@@ -1,0 +1,14 @@
+# A fictional warehouse-club receipt for the canonicalize demo (merchant and prices are made up).
+# Each line may end with a price; "#" lines are ignored.
+KS ORG EGGS 24CT            7.49
+KS 2% RDCD FAT MLK 2PK      6.99
+CHKN THGH BNLS 6.09LB      21.26
+KS SPRNG MX 1LB             4.99
+KS GRK YGRT NF 2X48OZ       9.99
+KS PB CRMY 2/40OZ          10.49
+KS FINE MEX BLEND SHRD 2.5#  11.99
+KS ROTISSERIE CHKN          4.99
+BANANAS 3 LB                1.49
+/ KS ORG EGGS 2.00-
+KS 2PLY TOWEL 12CT         22.99
+CA CRV 24                   1.20

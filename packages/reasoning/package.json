@@ -20,7 +20,8 @@
     "ping": "node --env-file-if-exists=../../.env scripts/ping.ts",
     "eval": "node --env-file-if-exists=../../.env scripts/eval.ts",
     "eval:synth": "node --env-file-if-exists=../../.env scripts/eval-synth.ts",
-    "eval:synth:generate": "node eval/synth/generate.ts"
+    "eval:synth:generate": "node eval/synth/generate.ts",
+    "demo": "node --env-file-if-exists=../../.env scripts/demo.ts"
   },
   "dependencies": {
     "openai": "^7.24.0",

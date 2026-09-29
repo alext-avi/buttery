@@ -58,6 +58,10 @@ npm run reasoning:ping                  # one estimateShelfLife call; fails unle
 npm run reasoning:eval                  # fixture receipts → canonicalizeItems, prints accuracy
 npm run reasoning:eval -- --model zai/GLM-5.3-Flash
 
+# Live demo: paste receipt lines (Ctrl-D), pass them as arguments, or use the sample receipt
+npm run demo -w packages/reasoning -- --file scripts/demo-receipt.txt --compare   # vs offline fallback
+npm run demo -w packages/reasoning -- "KS ORG EGGS 24CT" "GV 2PCT MILK HG" --why
+
 # Synthetic canonicalization eval (see "Canonicalization eval" below)
 npm run eval:synth:generate -w packages/reasoning                       # rebuild eval/data (no model)
 npm run eval:synth -w packages/reasoning -- --provider fallback           # free baseline
@@ -217,14 +221,18 @@ is involved, so labels are correct by construction.
 | Test split (375 lines) | Before | After |
 |---|---|---|
 | line_kind | 97.9% | **99.5%** |
-| canonical_name (lenient / strict) | 97.8% / 85.2% | 98.1% / 83.6% |
-| category | 99.1% | 99.7% |
+| canonical_name (lenient / strict) | 97.8% / 85.2% | 97.8% / 82.7% |
+| category | 99.1% | **100%** |
 | package | 99.6% | **100%** |
-| match accuracy | 97.2% | **98.6%** |
+| match accuracy | 97.2% | **98.9%** |
 | **wrong match** | **2.8%** | **0.9%** |
-| missed match | 0.0% | 0.6% |
+| missed match | 0.0% | 0.3% |
 | precision of `high`-confidence matches | 97.7% | **99.4%** |
-| latency per receipt | 5.4 s | 4.5 s |
+| latency per receipt | 5.4 s | 3.8 s |
+
+"After" is the final code (`--split test --concurrency 1`). An earlier run of the same prompt,
+before the pack-count fix, scored within 0.3 points on every metric: Flash isn't fully
+deterministic even at temperature 0.
 
 Dev after tuning: 100% line_kind, 99.4% name, 99.8% category, 100% package, 98.3% match,
 0.6% wrong match, and 100% precision on high-confidence matches (219/219).
@@ -243,7 +251,7 @@ Dev after tuning: 100% line_kind, 99.4% name, 99.8% category, 100% package, 98.3
   now accepts more specific names. Both before and after were scored with the fixed labels.
 - *Hand-case leakage.* I wrote the hand-written test receipts before adding the parser rules for
   `#`, `Z`, `HG` and `2/40OZ`, so that subset isn't fully held out. The generated subset alone
-  scores 98.4% match, 0.9% wrong match and 100% package. The hand subset scores 100% match on
+  scores 98.7% match, 0.9% wrong match and 100% package. The hand subset scores 100% match on
   36 lines.
 - *Remaining errors:*
   - Mostly defensible disagreements: "pico de gallo" vs salsa, "tamari" vs soy sauce, and

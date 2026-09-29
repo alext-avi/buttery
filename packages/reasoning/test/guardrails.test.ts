@@ -416,6 +416,13 @@ describe('canonicalize standards', () => {
     expect(result.violations).toEqual([expect.stringContaining('replaced by printed size')]);
   });
 
+  it('a printed pack count alone keeps a model package that agrees with it', async () => {
+    const { provider } = crusoe([reply({ package: { count: 2, size: 1, unit: 'gal' } })]);
+    const result = await provider.canonicalizeItems({ lines: [line('KS 2% RDCD FAT MLK 2PK')], candidates: {} });
+    expect(result.output.lines[0]!.package).toEqual({ count: 2, size: 1, unit: 'gal' });
+    expect(result.violations).toEqual([]);
+  });
+
   it('keeps an equivalent model package without a violation', async () => {
     const { provider } = crusoe([reply({ package: { count: 1, size: 64, unit: 'fl_oz' } })]);
     const result = await provider.canonicalizeItems({ lines: [line('WHOLE MILK HALF GAL')], candidates: {} });
