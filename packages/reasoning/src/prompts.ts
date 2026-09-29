@@ -13,22 +13,27 @@ const SYSTEM: Record<ReasoningFunction, string> = {
 
 Task: canonicalize grocery receipt lines or free-text item lines.
 For every input line, return exactly one output line with the same line_id.
-- canonical_name: the generic food a person would say, lowercase and brand-free, in the form a shopping list would use
-  (e.g. "CHKN BREAST 3 LB" → "chicken breast", "GRK YOGURT 2X32 OZ" → "greek yogurt",
-  "CHICKPEAS 15 OZ CAN" → "canned chickpeas"). Drop store brands and sizes. For coupons and
-  returns, name the food they refer to.
+- canonical_name: the generic food a person would put on a shopping list, lowercase. Expand receipt
+  abbreviations ("CHKN BRST" → "chicken breast", "GRK YOG" → "greek yogurt", "FF" → fat free,
+  "VAN" → vanilla). Drop store brands, "organic", sizes and fat ratios. Keep variety words that make
+  it a different food (2%, greek, vanilla, brown, sourdough, smoked). Name the product, not a flavor
+  or topping ("PIZZA PEPPERONI" → "pepperoni pizza"). Coupons and returns: name the food they refer to.
 - category: one of
 ${categoryList}
 - perishability: "perishable" if it needs refrigeration or freezing to keep, else "shelf_stable".
-- package: parse the size on the line. "count" is the number of sub-packages (only for multipacks
-  like "2X32 OZ" → count 2, size 32, unit "oz"); "size" and "unit" are the amount per package.
-  Units: oz, fl_oz, lb, g, kg, ml, l, gal, qt, pt, ct (e.g. "24 CT" → size 24, unit "ct";
-  "1/2 GAL" → size 0.5, unit "gal"). Omit package when no size is printed.
-- line_kind: "item" for food purchases, "coupon" for discounts, "return" for returns/refunds,
-  "non_food" for household goods that are not food.
-- match: choose food_id ONLY from candidates[line_id] when it is clearly the same food; otherwise
-  "new". Never invent ids. If there are no candidates, use "new".
-- rationale: one short sentence.
+- package: the printed size. "count" only for multipacks ("2X32 OZ" → count 2, size 32, unit "oz");
+  "24 CT" → size 24, unit "ct"; "1/2 GAL" → size 0.5, unit "gal"; a dozen = 12 ct. Omit when no size is given.
+- line_kind: "item" for food; "coupon" for discounts and savings lines; "return" for returns and
+  refunds of a product; "non_food" for household goods and for fees (bottle deposits/CRV, bag fees),
+  whose category is "non_food".
+- match: pick a food_id from candidates[line_id] ONLY if it is the same food the household would store
+  as one item. A different variety, flavor, fat level, grain or form is a different food: whole vs 2%
+  milk, greek vs vanilla yogurt, brown vs white rice, egg whites vs eggs, sourdough vs sandwich bread,
+  ground turkey vs ground chicken, raspberries vs blackberries. If only similar foods are listed,
+  answer "new". A wrong match corrupts the inventory while a missed one only creates a duplicate, so
+  prefer "new" when unsure. Never invent ids. Confidence "high" only when certain (e.g. an alias
+  equals the line).
+- rationale: at most 8 words.
 Agent hints are suggestions from whoever transcribed the receipt; the raw text wins on conflict.`,
 
   estimateShelfLife: `${COMMON}

@@ -69,7 +69,7 @@ export const SHELF_LIFE_DEFAULTS = {
     keywords: ['salmon', 'shrimp', 'fish', 'cod', 'tilapia', 'scallops', 'crab', 'tuna steak', 'mussels'],
   },
   deli_meat: {
-    label: 'Deli and cured meats',
+    label: 'Deli, cured and processed meats (sliced turkey, ham, salami, hot dogs)',
     perishability: 'perishable',
     states: { sealed: b(14, 14), opened: b(4, 5), frozen: b(60, 60), thawed: b(3, 5), prepared: b(3, 4) },
     keywords: ['ham', 'salami', 'deli', 'deli turkey', 'prosciutto', 'pepperoni', 'hot dogs', 'bologna'],
@@ -129,7 +129,7 @@ export const SHELF_LIFE_DEFAULTS = {
     keywords: ['pasta', 'spaghetti', 'penne', 'macaroni', 'rice', 'brown rice', 'oats', 'oatmeal', 'cereal', 'quinoa', 'noodles', 'couscous', 'lentils', 'dried beans'],
   },
   canned_goods: {
-    label: 'Canned and jarred goods',
+    label: 'Canned and jarred goods (beans, tomatoes, tuna, broth, coconut milk)',
     perishability: 'shelf_stable',
     states: { sealed: b(null, null), opened: b(4, 7), frozen: b(60, 90), thawed: b(3, 4), prepared: b(3, 4) },
     keywords: ['canned', 'can', 'chickpeas', 'black beans', 'kidney beans', 'canned tomatoes', 'tomato paste', 'canned tuna', 'soup', 'broth', 'stock', 'coconut milk'],
@@ -183,7 +183,7 @@ export const SHELF_LIFE_DEFAULTS = {
     keywords: [],
   },
   non_food: {
-    label: 'Household items that are not food',
+    label: 'Not food: household goods, pet food, fees and deposits',
     perishability: 'shelf_stable',
     states: { sealed: b(null, null), opened: b(null, null), frozen: b(null, null), thawed: b(null, null), prepared: b(null, null) },
     keywords: ['paper towels', 'paper towel', 'toilet paper', 'detergent', 'laundry', 'soap', 'dish soap', 'trash bags', 'foil', 'aluminum foil', 'plastic wrap', 'batteries', 'napkins', 'sponge', 'sponges', 'shampoo', 'tissues', 'bleach', 'cleaner'],

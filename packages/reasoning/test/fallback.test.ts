@@ -150,3 +150,55 @@ describe('SHELF_LIFE_DEFAULTS', () => {
     }
   });
 });
+
+describe('unit standards (text helpers)', async () => {
+  const { parsePackage, toBaseQuantity, standardizeCanonicalName } = await import('../src/text.ts');
+
+  it.each([
+    ['KS FINE MEX BLEND SHRD 2.5#', { size: 2.5, unit: 'lb' }],
+    ['SIG SELECT OJ 52Z', { size: 52, unit: 'oz' }],
+    ['GV 2PCT MILK HG', { size: 0.5, unit: 'gal' }],
+    ['EGGS 5 DZ', { size: 60, unit: 'ct' }],
+    ['KS PB CRMY 2/40OZ', { count: 2, size: 40, unit: 'oz' }],
+    ['RETURN: MILK 1/2 GAL', { size: 0.5, unit: 'gal' }],
+    ['16 PK DR PEPPER 12 FL OZ', { count: 16, size: 12, unit: 'fl_oz' }],
+    ['KOMBUCHA GINGER 16FLOZ', { size: 16, unit: 'fl_oz' }],
+    ['GR BEEF 85/15 2.25LB', { size: 2.25, unit: 'lb' }],
+    ['got a dozen eggs', { size: 12, unit: 'ct' }],
+    ['KS 2% RDCD FAT MLK 2PK', { count: 2 }],
+    ['CRV 12PK', { count: 12 }],
+    ['PAPER TOWELS 12CT', { size: 12, unit: 'ct' }],
+    ['12 ZUCCHINI', undefined],
+    ['BAG 0.10', undefined],
+  ])('parsePackage(%j)', (raw, expected) => {
+    expect(parsePackage(raw)).toEqual(expected);
+  });
+
+  it('converts packages to base quantities so different printings compare', () => {
+    expect(toBaseQuantity({ count: 2, size: 32, unit: 'oz' })).toEqual({ amount: 1814.37, unit: 'g' });
+    expect(toBaseQuantity({ size: 0.5, unit: 'gal' })!.amount).toBeCloseTo(toBaseQuantity({ size: 64, unit: 'fl_oz' })!.amount, -1);
+    expect(toBaseQuantity({ size: 24, unit: 'ct' })).toEqual({ amount: 24, unit: 'ct' });
+  });
+
+  it('standardizes names and keeps variety words', () => {
+    expect(standardizeCanonicalName('Organic 2% Milk')).toBe('2% milk');
+    expect(standardizeCanonicalName('KS brown rice 25 LB')).toBe('brown rice');
+  });
+});
+
+describe('explicit line-kind markers', async () => {
+  const { explicitLineKind } = await import('../src/text.ts');
+  it.each([
+    ['INST SAV CORN 4CT', 'coupon'],
+    ['MFR CPN KS EGGS', 'coupon'],
+    ['SPINACH COUPON', 'coupon'],
+    ['/ 1234567 KS ORG EGGS 2.00-', 'coupon'],
+    ['/ RED SDLS GRAPES 2.00 OFF', 'coupon'],
+    ['RETURN: MILK 1/2 GAL', 'return'],
+    ['RTN GV WHL MLK GAL', 'return'],
+    ['BAG REFUND 0.10', undefined],
+    ['CORN ON COB', undefined],
+  ])('%s → %s', (raw, kind) => {
+    expect(explicitLineKind(raw)).toBe(kind);
+  });
+});

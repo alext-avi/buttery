@@ -13,6 +13,7 @@ export {
 export { SHELF_LIFE_DEFAULTS, FOOD_CATEGORIES, FOOD_STATES, categoryDefaults } from './shelfLifeDefaults.ts';
 export type { FoodCategory, FoodState, CategoryDefaults, ShelfLifeBound, Perishability } from './shelfLifeDefaults.ts';
 export { createMemoryCache } from './cache.ts';
+export { PACKAGE_UNITS, parsePackage, toBaseQuantity, samePackage, standardizeCanonicalName, type PackageUnit, type ParsedPackage } from './text.ts';
 export { ReasoningInputError, DEFAULT_TIMEOUTS_MS } from './engine.ts';
 export * from './schemas.ts';
 export type {

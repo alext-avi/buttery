@@ -15,6 +15,7 @@ import type {
 } from './schemas.ts';
 import { fallbackCanonicalize, fallbackShelfLife, resolveCategory } from './fallback.ts';
 import { categoryDefaults } from './shelfLifeDefaults.ts';
+import { consistentWithPrinted, explicitLineKind, parsePackage, sanitizePackage, standardizeCanonicalName } from './text.ts';
 
 export interface Guarded<T> {
   output: T;
@@ -66,8 +67,10 @@ export function normalizeCanonicalize(json: unknown): unknown {
   if (!isRecord(json) || !Array.isArray(json.lines)) return json;
   for (const line of json.lines) {
     if (!isRecord(line) || !isRecord(line.package)) continue;
-    dropEmpty(line.package, ['count', 'size', 'unit']);
-    if (Object.keys(line.package).length === 0) delete line.package;
+    // Map unit spellings onto the vocabulary ("dozen" → ×12 ct, "fl oz" → fl_oz) and drop zeros.
+    const pkg = sanitizePackage(line.package);
+    if (pkg) line.package = pkg;
+    else delete line.package;
   }
   return json;
 }
@@ -79,8 +82,10 @@ export function guardCanonicalize(
   const violations: string[] = [];
   const byId = new Map<string, CanonicalizeOutput['lines'][number]>();
   const known = new Set(input.lines.map((l) => l.line_id));
+  const rawById = new Map(input.lines.map((l) => [l.line_id, l.raw_text]));
 
-  for (const line of output.lines) {
+  for (const modelLine of output.lines) {
+    const line = standardizeLine(modelLine, rawById.get(modelLine.line_id), violations);
     if (!known.has(line.line_id)) {
       violations.push(`canonicalizeItems: dropped unknown line_id "${line.line_id}"`);
       continue;
@@ -110,6 +115,36 @@ export function guardCanonicalize(
   }
 
   return { output: { lines: input.lines.map((l) => byId.get(l.line_id)!) }, violations };
+}
+
+/**
+ * Deterministic standards on top of the model: the canonical name gets its standard form, and a
+ * size printed on the line wins over the model's reading of it. The model only supplies a
+ * package when the parser finds none (free text like "the big bag of spinach").
+ */
+function standardizeLine(
+  line: CanonicalizeOutput['lines'][number],
+  raw: string | undefined,
+  violations: string[],
+): CanonicalizeOutput['lines'][number] {
+  const { package: modelPackage, ...rest } = line;
+  const canonical_name = standardizeCanonicalName(line.canonical_name);
+  const printed = raw === undefined ? undefined : parsePackage(raw);
+  let pkg = sanitizePackage(modelPackage);
+  const marked = raw === undefined ? undefined : explicitLineKind(raw);
+  if (marked && marked !== line.line_kind) {
+    violations.push(`canonicalizeItems: line "${line.line_id}" line_kind "${line.line_kind}" replaced by explicit marker "${marked}"`);
+    rest.line_kind = marked;
+  }
+  if (printed && !consistentWithPrinted(printed, pkg)) {
+    violations.push(
+      `canonicalizeItems: line "${line.line_id}" package ${JSON.stringify(pkg ?? null)} replaced by printed size ${JSON.stringify(printed)}`,
+    );
+    pkg = printed;
+  }
+  // A coupon's size is the product's, not the coupon's: keep it only when printed on the line.
+  if (rest.line_kind === 'coupon' && !printed) pkg = undefined;
+  return { ...rest, canonical_name, ...(pkg ? { package: pkg } : {}) };
 }
 
 export function guardShelfLife(

@@ -40,7 +40,9 @@ describe('createFakeProvider', () => {
     });
     const result = await provider.canonicalizeItems({ lines: [{ line_id: 'x', raw_text: 'EGGS 24 CT' }], candidates: {} });
     expect(result.output.lines[0]!.match).toEqual({ food_id: 'new', confidence: 'low' });
-    expect(result.violations).toHaveLength(1);
+    expect(result.violations).toContainEqual(expect.stringContaining('not_a_candidate'));
+    // The printed size on the line wins over the (missing) scripted package.
+    expect(result.output.lines[0]!.package).toEqual({ size: 24, unit: 'ct' });
   });
 
   it('falls back for unscripted functions and simulated errors', async () => {
