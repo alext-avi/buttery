@@ -397,9 +397,57 @@ describe('output hygiene', () => {
 
   it('drops zero package fields in canonicalize instead of failing validation', async () => {
     const out = milkOut();
+    const line = { line_id: 'l1', raw_text: 'WHOLE MILK' }; // no printed size
     const { provider } = crusoe([json({ lines: [{ ...out.lines[0], package: { count: 0, size: 0 } }] })]);
-    const result = await provider.canonicalizeItems({ lines: [milkLine], candidates: milkCandidates });
+    const result = await provider.canonicalizeItems({ lines: [line], candidates: milkCandidates });
     expect(result.path).toBe('model');
     expect(result.output.lines[0]!.package).toBeUndefined();
+  });
+});
+
+describe('canonicalize standards', () => {
+  const line = (raw_text: string) => ({ line_id: 'l1', raw_text });
+  const reply = (fields: Record<string, unknown>) => json({ lines: [{ ...milkOut('new').lines[0], ...fields }] });
+
+  it('a printed size wins over the model reading, with a violation', async () => {
+    const { provider } = crusoe([reply({ package: { size: 5, unit: 'ct' } })]);
+    const result = await provider.canonicalizeItems({ lines: [line('CAGE FREE EGGS 5 DZ')], candidates: {} });
+    expect(result.output.lines[0]!.package).toEqual({ size: 60, unit: 'ct' });
+    expect(result.violations).toEqual([expect.stringContaining('replaced by printed size')]);
+  });
+
+  it('a printed pack count alone keeps a model package that agrees with it', async () => {
+    const { provider } = crusoe([reply({ package: { count: 2, size: 1, unit: 'gal' } })]);
+    const result = await provider.canonicalizeItems({ lines: [line('KS 2% RDCD FAT MLK 2PK')], candidates: {} });
+    expect(result.output.lines[0]!.package).toEqual({ count: 2, size: 1, unit: 'gal' });
+    expect(result.violations).toEqual([]);
+  });
+
+  it('keeps an equivalent model package without a violation', async () => {
+    const { provider } = crusoe([reply({ package: { count: 1, size: 64, unit: 'fl_oz' } })]);
+    const result = await provider.canonicalizeItems({ lines: [line('WHOLE MILK HALF GAL')], candidates: {} });
+    // 64 fl oz ≈ 1/2 gal, so the model's reading stands (count 1 is dropped as noise).
+    expect(result.output.lines[0]!.package).toEqual({ size: 64, unit: 'fl_oz' });
+    expect(result.violations).toEqual([]);
+  });
+
+  it('uses the model package when nothing is printed, mapping unit spellings to the vocabulary', async () => {
+    const { provider } = crusoe([{ content: JSON.stringify({ lines: [{ ...milkOut('new').lines[0], package: { size: 1, unit: 'dozen' } }] }) }]);
+    const result = await provider.canonicalizeItems({ lines: [line('got eggs')], candidates: {} });
+    expect(result.path).toBe('model');
+    expect(result.output.lines[0]!.package).toEqual({ size: 12, unit: 'ct' });
+  });
+
+  it('standardizes canonical names: lowercase, no brand, organic, size or fat ratio', async () => {
+    const { provider } = crusoe([reply({ canonical_name: 'KS Organic Ground Beef 85/15 2.25 LB' })]);
+    const result = await provider.canonicalizeItems({ lines: [line('KS ORG GR BEEF 85/15 2.25LB')], candidates: {} });
+    expect(result.output.lines[0]!.canonical_name).toBe('ground beef');
+  });
+
+  it('restricts package.unit to the vocabulary in the model schema', async () => {
+    const { provider, requests } = crusoe([json(milkOut())]);
+    await provider.canonicalizeItems({ lines: [milkLine], candidates: milkCandidates });
+    const unit = requests[0]!.body.response_format.json_schema.schema.properties.lines.items.properties.package.properties.unit;
+    expect(unit.enum).toEqual(['g', 'kg', 'oz', 'lb', 'ml', 'l', 'fl_oz', 'gal', 'qt', 'pt', 'ct']);
   });
 });

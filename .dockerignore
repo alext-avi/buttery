@@ -1,0 +1,10 @@
+**/node_modules
+.git
+.env
+test-results
+playwright-report
+apps/web/dist
+apps/server/.e2e
+tests/fixtures/food-images/images
+tests/fixtures/food-images/retired
+.superpowers

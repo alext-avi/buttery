@@ -1,0 +1,38 @@
+name: buttery
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: buttery
+      POSTGRES_PASSWORD: buttery
+      POSTGRES_DB: buttery
+    ports: ["127.0.0.1:5433:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U buttery"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  app:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://buttery:buttery@db:5432/buttery
+      PORT: "8790"
+    ports: ["127.0.0.1:8790:8790"]
+    depends_on:
+      db: { condition: service_healthy }
+    restart: unless-stopped
+    networks:
+      default: {}
+      agentdock:
+        aliases: [buttery]
+volumes:
+  pgdata:
+
+networks:
+  agentdock:
+    external: true
+    name: agent-container_default

@@ -36,16 +36,16 @@
 
 ## Task order vs. spec phases
 
-Tasks 1–4 are Phase 0 foundations over personal access tokens (PATs). Tasks 5–17 are Phase 1. Task 18 wires Crusoe once the parallel PR merges. Tasks 19–20 finish Phase 0 (AuthKit OAuth, container, agentdock, Tailscale Funnel) and run the Phase 0 and Phase 1 acceptance checks. This order is deliberate: the receipt slice works end to end over PATs before any external identity or hosting dependency.
+Tasks 1–4 are Phase 0 foundations over personal access tokens (PATs). Tasks 5–17 are Phase 1. Task 18 wires Crusoe once the parallel PR merges. Task 19 adds AuthKit OAuth. Task 20 adds self-serve sign-up and onboarding (account, household, agent tokens). Task 21 finishes Phase 0 (container, agentdock, Tailscale Funnel) and runs the Phase 0 and Phase 1 acceptance checks. This order is deliberate: the receipt slice works end to end over PATs before any external identity or hosting dependency.
 
 ## File map
 
 ```
 package.json                     root workspaces + scripts (modified)
 tsconfig.base.json               shared compiler options
-docker-compose.yml               db (Task 2), app (Task 20)
+docker-compose.yml               db (Task 2), app (Task 21)
 docker/postgres-init/01-databases.sql
-Dockerfile, .dockerignore        (Task 20)
+Dockerfile, .dockerignore        (Task 21)
 .env.example
 playwright.config.js             (modified, Task 16)
 tests/e2e/*.spec.ts              Playwright, phone viewport
@@ -6890,7 +6890,7 @@ git commit -m "feat: use the Crusoe reasoning module with a Postgres-backed cach
 **Manual prerequisite (you, in the WorkOS dashboard):**
 1. Create or choose a WorkOS environment for Buttery and enable **AuthKit**.
 2. Enable **Dynamic Client Registration** (needed for claude.ai custom connectors; see WorkOS's MCP auth guide, as dashboard labels change).
-3. Add the redirect URI `${PUBLIC_BASE_URL}/auth/callback` (the Funnel URL from Task 20, plus `http://localhost:8790/auth/callback` for local use).
+3. Add the redirect URI `${PUBLIC_BASE_URL}/auth/callback` (the Funnel URL from Task 21, plus `http://localhost:8790/auth/callback` for local use).
 4. Copy the AuthKit domain (`https://<name>.authkit.app`), client ID and API key into `.env` as `AUTHKIT_DOMAIN`, `WORKOS_CLIENT_ID` and `WORKOS_API_KEY`. Leave `AUTHKIT_ISSUER` empty unless tokens carry a different `iss`. Decode one token to check.
 
 **Files:**
@@ -7147,7 +7147,527 @@ git commit -m "feat: AuthKit OAuth resource server for MCP and account sign-in f
 
 ---
 
-### Task 20: Container on the agentdock network, Tailscale Funnel, acceptance run
+### Task 20: Self-serve sign-up and onboarding
+
+Anyone can create an account and household from the web (AuthKit's sign-up screen). New users land on an onboarding and settings page, where they name the household, set its timezone, and connect agents. They mint their own access tokens for CLI agents (Claude Code, Codex, agentdock), with no operator step. `SIGNUP_MODE=closed` turns off new sign-ups without affecting existing users.
+
+**Files:**
+- Create: `apps/server/src/services/household.ts`, `apps/web/src/pages/Settings.tsx`, `tests/e2e/03-settings.spec.ts`
+- Modify: `apps/server/src/config.ts` (`SIGNUP_MODE`), `apps/server/src/identity/provision.ts` (`allowCreate`), `apps/server/src/identity/tokens.ts` (`listPats`, `revokePat`), `apps/server/src/auth/authkit.ts` (sign-up screen, sign-up policy, `created`), `apps/server/src/http/authRoutes.ts`, `apps/server/src/http/apiRoutes.ts`, `apps/web/src/api.ts`, `apps/web/src/types.ts`, `apps/web/src/pages/Login.tsx`, `apps/web/src/components/Layout.tsx`, `apps/web/src/main.tsx`, `.env.example`
+- Test: `apps/server/test/signup.test.ts`, `tests/e2e/03-settings.spec.ts`
+
+**Interfaces:**
+- Consumes: `createAuthkit` (Task 19), `provisionUser`, `createPat`, `resolvePat`, `getWhoami`, session helpers.
+- Produces:
+  - `Config.SIGNUP_MODE: 'open' | 'closed'` (default `open`)
+  - `provisionUser(db, input, { allowCreate?: boolean })`: throws `AppError('signup_closed', …, 403)` when it would create a user and `allowCreate === false`
+  - `Authkit.loginUrl(next, mode?: 'sign-in' | 'sign-up')`
+  - `Authkit.completeLogin(code) → { userId, householdId, created }`
+  - `listPats(db, p)`, `revokePat(db, p, connectionId)`
+  - `updateHousehold(db, p, { name?, timezone? })`
+  - Routes:
+    - `GET /auth/authkit?mode=sign-up`
+    - `GET /auth/config` → `{ authkit, signup }`
+    - `GET /api/tokens`
+    - `POST /api/tokens {client_name}` → 201 with the token shown once
+    - `POST /api/tokens/:id/revoke`
+    - `POST /api/household {name?, timezone?}`
+  - SPA route `/settings` (`?welcome=1` after a first sign-up)
+
+**Ruling (security over the global idempotency constraint):** `POST /api/tokens` takes **no** idempotency key. Storing its response in `idempotency_records` would keep the raw token in the database. The UI disables the button while the request is in flight; a double-submit creates two tokens, and the user can revoke one.
+
+- [ ] **Step 1: Write the failing server test** `apps/server/test/signup.test.ts`
+
+```ts
+import { beforeEach, describe, expect, it } from 'vitest';
+import { and, eq } from 'drizzle-orm';
+import { createAuthkit } from '../src/auth/authkit';
+import { loadConfig } from '../src/config';
+import { idempotencyRecords, users } from '../src/db/schema';
+import { createApp } from '../src/http/app';
+import { provisionUser } from '../src/identity/provision';
+import { resolvePat } from '../src/identity/tokens';
+import { resetDb, TEST_DB_URL, testDb } from './helpers/db';
+import { seedUser, testDeps } from './helpers/app';
+
+const base = { DATABASE_URL: TEST_DB_URL, SESSION_SECRET: 'x'.repeat(32), PUBLIC_BASE_URL: 'https://buttery.test', AUTHKIT_DOMAIN: 'https://auth.test', WORKOS_CLIENT_ID: 'client_test', WORKOS_API_KEY: 'sk_test_dummy' };
+const newUser = async () => ({ id: 'user_new', email: 'new@example.com', firstName: 'Sam', lastName: null });
+
+function appWith(mode: 'open' | 'closed') {
+  const config = loadConfig({ ...base, SIGNUP_MODE: mode });
+  const authkit = createAuthkit(config, testDb(), { fetchUser: async (id) => ({ ...(await newUser()), id }), exchangeCode: newUser })!;
+  return createApp(testDeps({ config, authkit }));
+}
+
+async function cookieFor(app: ReturnType<typeof createApp>, token: string) {
+  const res = await app.request('/auth/token-login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token }) });
+  return res.headers.get('set-cookie')!.split(';')[0]!;
+}
+const post = (app: ReturnType<typeof createApp>, path: string, cookie: string, body: unknown) =>
+  app.request(path, { method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+describe('self-serve sign-up', () => {
+  beforeEach(() => resetDb());
+
+  it('sends sign-up requests to the AuthKit sign-up screen', async () => {
+    const res = await appWith('open').request('/auth/authkit?mode=sign-up&next=/inventory');
+    expect(res.headers.get('location')).toContain('screen_hint=sign-up');
+    expect(await (await appWith('open').request('/auth/config')).json()).toEqual({ authkit: true, signup: true });
+  });
+
+  it('creates a household on first sign-in and lands on onboarding', async () => {
+    const res = await appWith('open').request('/auth/callback?code=abc&state=%2Finventory');
+    expect(res.headers.get('location')).toBe('/settings?welcome=1');
+    const [u] = await testDb().select().from(users).where(eq(users.authSubject, 'user_new'));
+    expect(u?.email).toBe('new@example.com');
+  });
+
+  it('sends a returning user to their original page', async () => {
+    await provisionUser(testDb(), { authSubject: 'user_new', email: 'new@example.com' });
+    const res = await appWith('open').request('/auth/callback?code=abc&state=%2Freview%2Fx');
+    expect(res.headers.get('location')).toBe('/review/x');
+  });
+
+  it('refuses new identities when sign-up is closed, but not existing ones', async () => {
+    const closed = appWith('closed');
+    expect((await closed.request('/auth/callback?code=abc')).status).toBe(403);
+    expect(await (await closed.request('/auth/config')).json()).toEqual({ authkit: true, signup: false });
+    await provisionUser(testDb(), { authSubject: 'user_new', email: 'new@example.com' });
+    expect((await closed.request('/auth/callback?code=abc')).status).toBe(302);
+  });
+
+  it('lets a signed-in user create, list and revoke access tokens', async () => {
+    const app = createApp(testDeps());
+    const { token } = await seedUser(testDb());
+    const cookie = await cookieFor(app, token);
+    const created = await post(app, '/api/tokens', cookie, { client_name: 'Codex' });
+    expect(created.status).toBe(201);
+    const body = await created.json();
+    expect(body).toMatchObject({ client_name: 'Codex', mcp_url: 'https://buttery.test/mcp' });
+    expect(body.token).toMatch(/^btr_/);
+    expect(await resolvePat(testDb(), body.token)).not.toBeNull();
+
+    const list = await (await app.request('/api/tokens', { headers: { cookie } })).json();
+    expect(list.tokens.map((t: { client_name: string }) => t.client_name)).toContain('Codex');
+    expect(JSON.stringify(list)).not.toContain(body.token);
+    expect(JSON.stringify(await testDb().select().from(idempotencyRecords))).not.toContain(body.token);
+
+    expect((await post(app, `/api/tokens/${body.connection_id}/revoke`, cookie, {})).status).toBe(200);
+    expect(await resolvePat(testDb(), body.token)).toBeNull();
+  });
+
+  it('cannot revoke another user\'s token', async () => {
+    const app = createApp(testDeps());
+    const a = await seedUser(testDb(), 'a@example.com');
+    const b = await seedUser(testDb(), 'b@example.com');
+    const cookie = await cookieFor(app, b.token);
+    expect((await post(app, `/api/tokens/${a.principal.connectionId}/revoke`, cookie, {})).status).toBe(404);
+    expect(await resolvePat(testDb(), a.token)).not.toBeNull();
+  });
+
+  it('updates the household name and timezone, rejecting unknown timezones', async () => {
+    const app = createApp(testDeps());
+    const { token } = await seedUser(testDb());
+    const cookie = await cookieFor(app, token);
+    const ok = await (await post(app, '/api/household', cookie, { name: 'The Thomases', timezone: 'America/Chicago' })).json();
+    expect(ok.household).toMatchObject({ name: 'The Thomases', timezone: 'America/Chicago' });
+    expect((await post(app, '/api/household', cookie, { timezone: 'Mars/Olympus' })).status).toBe(422);
+  });
+
+  it('keeps allowCreate optional for the CLI', async () => {
+    const r = await provisionUser(testDb(), { email: 'cli@example.com' });
+    expect(r.created).toBe(true);
+    await expect(provisionUser(testDb(), { email: 'x@example.com' }, { allowCreate: false })).rejects.toMatchObject({ code: 'signup_closed' });
+    expect(await testDb().select().from(users).where(and(eq(users.email, 'x@example.com')))).toHaveLength(0);
+  });
+});
+```
+
+Run: `npm test -w apps/server -- signup`
+Expected: FAIL (`SIGNUP_MODE` is unknown, and the routes are missing).
+
+- [ ] **Step 2: Implement the server pieces**
+
+`apps/server/src/config.ts`: add `SIGNUP_MODE: z.enum(['open', 'closed']).default('open'),` to `EnvSchema`, and `SIGNUP_MODE=open` to `.env.example`.
+
+`apps/server/src/identity/provision.ts`: change the signature and guard creation:
+
+```ts
+import { AppError } from '../errors';
+
+export type ProvisionOptions = { allowCreate?: boolean };
+
+export async function provisionUser(db: Db, input: ProvisionInput, opts: ProvisionOptions = {}): Promise<ProvisionResult> {
+  // ...existing subject and email lookups unchanged...
+  if (opts.allowCreate === false) {
+    throw new AppError('signup_closed', 'New sign-ups are closed for this Buttery. Ask the household owner for access.', 403);
+  }
+  // ...existing transaction that creates household, user and membership...
+}
+```
+
+Append to `apps/server/src/identity/tokens.ts`:
+
+```ts
+import { desc } from 'drizzle-orm';
+import { notFound } from '../errors';
+
+export async function listPats(db: Executor, p: Principal) {
+  const rows = await db
+    .select()
+    .from(connections)
+    .where(and(eq(connections.userId, p.userId), eq(connections.householdId, p.householdId), eq(connections.kind, 'pat'), isNull(connections.revokedAt)))
+    .orderBy(desc(connections.createdAt));
+  return rows.map((r) => ({
+    connection_id: r.id,
+    client_name: r.clientName,
+    token_prefix: r.tokenPrefix,
+    created_at: r.createdAt.toISOString(),
+    last_used_at: r.lastUsedAt?.toISOString() ?? null,
+  }));
+}
+
+export async function revokePat(db: Executor, p: Principal, connectionId: string): Promise<void> {
+  const rows = await db
+    .update(connections)
+    .set({ revokedAt: new Date() })
+    .where(and(eq(connections.id, connectionId), eq(connections.userId, p.userId), eq(connections.householdId, p.householdId), eq(connections.kind, 'pat'), isNull(connections.revokedAt)))
+    .returning({ id: connections.id });
+  if (!rows.length) throw notFound('Token');
+}
+```
+
+`apps/server/src/services/household.ts`:
+
+```ts
+import { eq } from 'drizzle-orm';
+import { z } from 'zod';
+import type { Db } from '../db/client';
+import { households } from '../db/schema';
+import { AppError } from '../errors';
+import type { Principal } from '../identity/principal';
+
+function isTimeZone(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export const UpdateHouseholdSchema = z.object({
+  name: z.string().trim().min(1).max(80).optional(),
+  timezone: z.string().max(64).refine(isTimeZone, 'Unknown timezone').optional(),
+});
+
+export async function updateHousehold(db: Db, p: Principal, input: z.infer<typeof UpdateHouseholdSchema>) {
+  if (!input.name && !input.timezone) throw new AppError('invalid_input', 'Nothing to update', 422);
+  await db
+    .update(households)
+    .set({ ...(input.name ? { name: input.name } : {}), ...(input.timezone ? { timezone: input.timezone } : {}) })
+    .where(eq(households.id, p.householdId));
+}
+```
+
+`apps/server/src/auth/authkit.ts`:
+- `Authkit.loginUrl(next: string, mode: 'sign-in' | 'sign-up' = 'sign-in')` passes `screenHint: mode` to `getAuthorizationUrl`.
+- `ensure(u)` calls `provisionUser(db, {...}, { allowCreate: config.SIGNUP_MODE === 'open' })`.
+- In `resolveBearer`, wrap `ensure(...)` in try/catch and return `null` on an `AppError` with code `signup_closed`.
+- `completeLogin` returns `{ userId, householdId, created }` from `provisionUser`.
+
+`apps/server/src/http/authRoutes.ts`:
+
+```ts
+  app.get('/config', (c) => c.json({ authkit: Boolean(deps.authkit), signup: Boolean(deps.authkit) && deps.config.SIGNUP_MODE === 'open' }));
+  app.get('/authkit', (c) => {
+    if (!deps.authkit) throw new AppError('not_configured', 'Account sign-in is not configured', 404);
+    const mode = c.req.query('mode') === 'sign-up' ? 'sign-up' : 'sign-in';
+    return c.redirect(deps.authkit.loginUrl(safeNext(c.req.query('next')), mode));
+  });
+  app.get('/callback', async (c) => {
+    if (!deps.authkit) throw new AppError('not_configured', 'Account sign-in is not configured', 404);
+    const code = c.req.query('code');
+    if (!code) throw new AppError('invalid_input', 'Missing code', 400);
+    const { userId, householdId, created } = await deps.authkit.completeLogin(code);
+    const connectionId = await ensureWebConnection(deps.db, userId, householdId);
+    await writeSession(c, deps.config, { u: userId, h: householdId, c: connectionId });
+    return c.redirect(created ? '/settings?welcome=1' : safeNext(c.req.query('state')));
+  });
+```
+
+(These replace the Task 19 versions of `/config`, `/authkit` and `/callback`.)
+
+Add to `apps/server/src/http/apiRoutes.ts`:
+
+```ts
+  api.get('/tokens', async (c) => c.json({ tokens: await listPats(deps.db, c.get('principal')), mcp_url: `${deps.config.PUBLIC_BASE_URL}/mcp` }));
+
+  api.post('/tokens', async (c) => {
+    const { client_name } = z.object({ client_name: z.string().trim().min(1).max(60) }).parse(await c.req.json());
+    const p = c.get('principal');
+    const { token, connectionId } = await createPat(deps.db, { userId: p.userId, householdId: p.householdId, clientName: client_name });
+    return c.json({ token, connection_id: connectionId, client_name, mcp_url: `${deps.config.PUBLIC_BASE_URL}/mcp` }, 201);
+  });
+
+  api.post('/tokens/:id/revoke', async (c) => {
+    await revokePat(deps.db, c.get('principal'), z.uuid().parse(c.req.param('id')));
+    return c.json({ ok: true });
+  });
+
+  api.post('/household', async (c) => {
+    const p = c.get('principal');
+    await updateHousehold(deps.db, p, UpdateHouseholdSchema.parse(await c.req.json()));
+    return c.json(await getWhoami(deps.db, p, deps.config));
+  });
+```
+
+with imports `createPat, listPats, revokePat` from `../identity/tokens` and `updateHousehold, UpdateHouseholdSchema` from `../services/household`.
+
+Run: `npm test -w apps/server && npm run typecheck`
+Expected: all pass, including `signup.test.ts` (8 tests) and the Task 19 AuthKit tests.
+
+- [ ] **Step 3: Write the failing e2e test** `tests/e2e/03-settings.spec.ts`
+
+```ts
+import { expect, test } from '@playwright/test';
+import { expectNoHorizontalScroll, signIn } from './helpers';
+
+test('settings: rename the household and manage agent tokens', async ({ page }) => {
+  await signIn(page);
+  await page.goto('/settings?welcome=1');
+  await expect(page.getByRole('heading', { name: 'Your household is ready' })).toBeVisible();
+
+  await page.getByLabel('Household name').fill('E2E Kitchen');
+  await page.getByRole('button', { name: 'Save household' }).click();
+  await expect(page.getByRole('status')).toContainText('Saved');
+
+  await page.getByLabel('Agent name').fill('Codex');
+  await page.getByRole('button', { name: 'Create token' }).click();
+  const tokenBox = page.getByTestId('new-token');
+  await expect(tokenBox).toContainText('btr_');
+  await expect(tokenBox).toContainText('claude mcp add --transport http buttery');
+  const token = (await tokenBox.getByTestId('token-value').textContent())!.trim();
+
+  const row = page.getByTestId('token-row').filter({ hasText: 'Codex' });
+  await row.getByRole('button', { name: 'Revoke' }).click();
+  await expect(row).toHaveCount(0);
+  const reuse = await page.request.post('/auth/token-login', { data: { token } });
+  expect(reuse.status()).toBe(401);
+  await expectNoHorizontalScroll(page);
+});
+```
+
+Run: `npm run e2e -- 03-settings`
+Expected: FAIL (`/settings` renders "Page not found.").
+
+- [ ] **Step 4: Implement the web pieces**
+
+Append to `apps/web/src/types.ts`:
+
+```ts
+export type Me = {
+  user: { id: string; email: string | null; display_name: string | null };
+  household: { id: string; name: string; timezone: string };
+  connection: { id: string; client_name: string };
+};
+export type TokenRow = { connection_id: string; client_name: string; token_prefix: string | null; created_at: string; last_used_at: string | null };
+export type NewToken = { token: string; connection_id: string; client_name: string; mcp_url: string };
+```
+
+Add to `api` in `apps/web/src/api.ts` (and change `authConfig`'s type to `{ authkit: boolean; signup: boolean }`):
+
+```ts
+  me: () => request<Me>('GET', '/api/me'),
+  updateHousehold: (body: { name?: string; timezone?: string }) => request<Me>('POST', '/api/household', body),
+  tokens: () => request<{ tokens: TokenRow[]; mcp_url: string }>('GET', '/api/tokens'),
+  createToken: (client_name: string) => request<NewToken>('POST', '/api/tokens', { client_name }),
+  revokeToken: (id: string) => request<{ ok: true }>('POST', `/api/tokens/${id}/revoke`, {}),
+```
+
+`apps/web/src/pages/Settings.tsx`:
+
+```tsx
+import { useEffect, useState, type FormEvent } from 'react';
+import { useSearchParams } from 'react-router';
+import { api, ApiError } from '../api';
+import { ErrorBox } from '../components/ErrorBox';
+import { when } from '../format';
+import type { NewToken } from '../types';
+import { useLoad } from '../useLoad';
+
+export function Settings() {
+  const [params] = useSearchParams();
+  const welcome = params.get('welcome') === '1';
+  const me = useLoad(() => api.me(), []);
+  const tokens = useLoad(() => api.tokens(), []);
+  const [name, setName] = useState('');
+  const [timezone, setTimezone] = useState('');
+  const [agentName, setAgentName] = useState('Claude Code');
+  const [created, setCreated] = useState<NewToken | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!me.data) return;
+    setName(me.data.household.name);
+    setTimezone(welcome ? Intl.DateTimeFormat().resolvedOptions().timeZone : me.data.household.timezone);
+  }, [me.data, welcome]);
+
+  if (me.error) return <ErrorBox error={me.error} />;
+  if (!me.data || !tokens.data) return <p className="muted">Loading…</p>;
+  const mcpUrl = tokens.data.mcp_url;
+
+  async function run(fn: () => Promise<void>) {
+    setBusy(true);
+    setMessage(null);
+    try {
+      await fn();
+    } catch (e) {
+      setMessage(e instanceof ApiError ? e.message : 'Something went wrong. Try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+  const saveHousehold = (e: FormEvent) => {
+    e.preventDefault();
+    void run(async () => {
+      me.setData(await api.updateHousehold({ name, timezone }));
+      setMessage('Saved.');
+    });
+  };
+  const createToken = (e: FormEvent) => {
+    e.preventDefault();
+    void run(async () => {
+      setCreated(await api.createToken(agentName));
+      tokens.reload();
+    });
+  };
+  const revoke = (id: string) =>
+    run(async () => {
+      await api.revokeToken(id);
+      if (created?.connection_id === id) setCreated(null);
+      tokens.reload();
+    });
+
+  return (
+    <div>
+      <header>
+        {welcome ? (
+          <>
+            <h1>Your household is ready</h1>
+            <p className="muted">Name it, check the timezone, then connect an agent. You'll mostly use Buttery by talking to Claude, Codex or another assistant.</p>
+          </>
+        ) : (
+          <h1>Settings</h1>
+        )}
+      </header>
+      {message && (
+        <div className="banner" role="status">
+          {message}
+        </div>
+      )}
+
+      <h2>Household</h2>
+      <form className="card edit" onSubmit={saveHousehold}>
+        <label>
+          Household name
+          <input value={name} onChange={(e) => setName(e.target.value)} required />
+        </label>
+        <label>
+          Timezone (used for expiry dates)
+          <input value={timezone} onChange={(e) => setTimezone(e.target.value)} required />
+        </label>
+        <div className="actions">
+          <button className="primary" disabled={busy}>
+            Save household
+          </button>
+        </div>
+      </form>
+
+      <h2>Connect Claude (web, desktop, phone)</h2>
+      <div className="card">
+        <p>
+          In Claude, open Settings → Connectors → Add custom connector, and paste:
+        </p>
+        <div className="raw">{mcpUrl}</div>
+        <p className="muted small">Sign in with this same account when Claude asks.</p>
+      </div>
+
+      <h2>Connect a command-line agent</h2>
+      <form className="card edit" onSubmit={createToken}>
+        <label>
+          Agent name
+          <input value={agentName} onChange={(e) => setAgentName(e.target.value)} placeholder="Claude Code, Codex, agentdock…" required />
+        </label>
+        <div className="actions">
+          <button className="primary" disabled={busy}>
+            Create token
+          </button>
+        </div>
+      </form>
+      {created && (
+        <div className="card" data-testid="new-token">
+          <p>
+            <strong>Copy this token now</strong>. It won't be shown again.
+          </p>
+          <div className="raw" data-testid="token-value">
+            {created.token}
+          </div>
+          <p className="muted small">Claude Code:</p>
+          <div className="raw">{`claude mcp add --transport http buttery ${created.mcp_url} --header "Authorization: Bearer ${created.token}"`}</div>
+        </div>
+      )}
+
+      <h2>Active tokens</h2>
+      {tokens.data.tokens.length === 0 ? (
+        <p className="muted">No tokens yet.</p>
+      ) : (
+        <ul className="cards">
+          {tokens.data.tokens.map((t) => (
+            <li key={t.connection_id} className="card" data-testid="token-row">
+              <div className="title-row">
+                <strong>{t.client_name}</strong>
+                <span className="badge">{t.token_prefix}…</span>
+              </div>
+              <div className="meta">
+                Created {when(t.created_at)} · {t.last_used_at ? `last used ${when(t.last_used_at)}` : 'never used'}
+              </div>
+              <div className="actions">
+                <button onClick={() => revoke(t.connection_id)} disabled={busy}>
+                  Revoke
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+```
+
+`apps/web/src/pages/Login.tsx`: keep `authkit` and add `signup` state from `api.authConfig()`. When `signup` is true, render a primary link `Create your household` to `/auth/authkit?mode=sign-up&next=${encodeURIComponent(next)}`, above the existing "Continue with your account" link.
+
+`apps/web/src/components/Layout.tsx`: add `<NavLink to="/settings">Settings</NavLink>` after Inventory.
+
+`apps/web/src/main.tsx`: import `Settings` and add `{ path: '/settings', element: <Settings /> }` to the `Layout` children.
+
+- [ ] **Step 5: Run everything**
+
+Run: `npm run typecheck && npm test && npm run e2e`
+Expected: all pass.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add apps/server apps/web tests/e2e .env.example
+git commit -m "feat: self-serve sign-up, onboarding, household settings and agent token management"
+```
+
+---
+
+### Task 21: Container on the agentdock network, Tailscale Funnel, acceptance run
 
 **Files:**
 - Create: `Dockerfile`, `.dockerignore`, `docs/runbooks/connect-clients.md`
@@ -7266,6 +7786,8 @@ Check each item and note the evidence (test name, screenshot or transcript) in t
 | Fallback works when Crusoe is unreachable | `receipts.test.ts` "still builds a proposal when reasoning throws" + Task 18 Step 6 |
 | Review page shows the estimate basis naming the model; the item links to its reasoning call | e2e review test + the item page "estimated by" line |
 | Recaptured fixture receipt is detected as a duplicate | share `receipt-warehouse-recapture.png` after `receipt-warehouse-clean.png` |
+| Someone new can sign up, get a household and connect an agent without operator help | open `<base>/login` in a private window → Create your household → AuthKit sign-up → lands on `/settings?welcome=1` → create a token → `claude mcp add …` → `whoami` shows the new household |
+| `SIGNUP_MODE=closed` blocks new identities but not existing users | `signup.test.ts` |
 
 - [ ] **Step 5: Commit**
 

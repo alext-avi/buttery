@@ -1,10 +1,12 @@
 import { z } from 'zod';
 import { FOOD_CATEGORIES, FOOD_STATES } from './shelfLifeDefaults.ts';
+import { PACKAGE_UNITS } from './text.ts';
 
 // Field names are snake_case to match the spec's JSON. Input schemas strip unknown keys,
 // which is also the first privacy guardrail: only the fields below ever reach a model.
 
 export const ConfidenceSchema = z.enum(['high', 'medium', 'low']);
+export const PackageUnitSchema = z.enum(PACKAGE_UNITS);
 export const PerishabilitySchema = z.enum(['shelf_stable', 'perishable']);
 export const FoodStateSchema = z.enum(FOOD_STATES);
 export const FoodCategorySchema = z.enum(FOOD_CATEGORIES);
@@ -13,7 +15,8 @@ export const LineKindSchema = z.enum(['item', 'coupon', 'return', 'non_food']);
 export const PackageSchema = z.object({
   count: z.number().positive().optional().describe('Number of sub-packages, e.g. 2 for "2X32 OZ"'),
   size: z.number().positive().optional().describe('Amount per sub-package, e.g. 32'),
-  unit: z.string().min(1).optional().describe('One of oz, fl_oz, lb, g, kg, ml, l, gal, qt, pt, ct'),
+  // A fixed vocabulary: guided decoding can only emit these, and toBaseQuantity converts any of them.
+  unit: z.enum(PACKAGE_UNITS).optional().describe('Unit of size. Dozen → ct (x12); "#" → lb'),
 });
 
 // --- canonicalizeItems ---
