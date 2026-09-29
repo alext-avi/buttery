@@ -15,5 +15,24 @@ services:
       interval: 2s
       timeout: 3s
       retries: 30
+  app:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://buttery:buttery@db:5432/buttery
+      PORT: "8790"
+    ports: ["127.0.0.1:8790:8790"]
+    depends_on:
+      db: { condition: service_healthy }
+    restart: unless-stopped
+    networks:
+      default: {}
+      agentdock:
+        aliases: [buttery]
 volumes:
   pgdata:
+
+networks:
+  agentdock:
+    external: true
+    name: agent-container_default

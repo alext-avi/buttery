@@ -10,7 +10,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx --env-file-if-exists=../../.env src/cli/migrate.ts",
     "token:create": "tsx --env-file-if-exists=../../.env src/cli/token-create.ts",
-    "e2e:server": "tsx test/e2e-seed.ts && tsx src/main.ts"
+    "e2e:server": "tsx test/e2e-seed.ts && tsx src/main.ts",
+    "start:prod": "tsx src/cli/migrate.ts && tsx src/main.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.3",
