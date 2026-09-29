@@ -83,7 +83,9 @@ describe('inventory reads', () => {
     const item = await getItem(deps, principal, chicken.lot_id, NOW);
     expect(item.lot.expires).toMatchObject({ kind: 'estimated', confidence: 'medium' });
     expect(item.lot.expires?.basis).toContain('fake-1');
-    expect(item.evidence[0]).toMatchObject({ kind: 'receipt', summary: 'Receipt · PANTRY CLUB · 2026-09-28', line: 'CHKN BREAST 3 LB' });
+    expect(item.evidence[0]).toMatchObject({ kind: 'receipt', summary: 'Receipt · PANTRY CLUB · 2026-09-28', store: 'PANTRY CLUB', line: 'CHKN BREAST 3 LB' });
+    expect(item.evidence[0]!.purchased_at?.slice(0, 10)).toBe('2026-09-28');
+    expect(item.today).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(item.history.map((h) => h.op)).toEqual(['add_lot']);
     expect(item.reasoning.some((c) => c.function === 'estimateShelfLife' && c.model === 'fake-1')).toBe(true);
   });
@@ -94,6 +96,10 @@ describe('inventory reads', () => {
     expect(page.use_soon.expired).toHaveLength(1);
     expect(Object.keys(page.by_location)).toEqual(['fridge']);
     expect(page.locations).toEqual(['fridge', 'freezer', 'pantry', 'counter']);
+    expect(page.counts).toMatchObject({ total: 6, by_location: { fridge: 6 } });
+    const pantry = await getInventoryPage(deps, principal, { location: 'pantry' }, NOW);
+    expect(Object.keys(pantry.by_location)).toEqual([]);
+    expect(pantry.counts).toEqual(page.counts);
   });
 
   it('drops voided items after undo', async () => {

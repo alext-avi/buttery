@@ -4,13 +4,15 @@ export function Layout() {
   return (
     <>
       <header className="topbar">
-        <Link to="/inventory" className="brand">
-          Buttery
-        </Link>
-        <nav>
-          <NavLink to="/inventory">Inventory</NavLink>
-          <NavLink to="/settings">Settings</NavLink>
-        </nav>
+        <div className="topbar-inner">
+          <Link to="/inventory" className="brand">
+            buttery<span>.</span>
+          </Link>
+          <nav>
+            <NavLink to="/inventory">Inventory</NavLink>
+            <NavLink to="/settings">Settings</NavLink>
+          </nav>
+        </div>
       </header>
       <main>
         <Outlet />

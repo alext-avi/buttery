@@ -61,6 +61,8 @@ export type OpView = {
 };
 
 export type ProposalView = {
+  /** The household's local date, so clients label expiry the same way the server buckets it. */
+  today: string;
   proposal: { id: string; status: string; created_at: string };
   observation: {
     id: string;
@@ -135,6 +137,7 @@ export async function getProposalView(deps: Deps, p: Principal, proposalId: stri
   const payload = obs!.payload as { store?: string; purchased_at?: string; receipt_number?: string; total_cents?: number };
   const [dupProposal] = obs!.possibleDuplicateOf ? await db.select().from(proposals).where(eq(proposals.observationId, obs!.possibleDuplicateOf)) : [];
   return {
+    today,
     proposal: { id: proposal.id, status: proposal.status, created_at: proposal.createdAt.toISOString() },
     observation: {
       id: obs!.id,

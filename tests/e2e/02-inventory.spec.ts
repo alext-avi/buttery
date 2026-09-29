@@ -14,8 +14,9 @@ test.describe.serial('inventory on a phone', () => {
     await page.goto('/inventory');
     await expect(page.getByRole('heading', { name: 'Inventory' })).toBeVisible();
     const chicken = page.getByTestId('lot').filter({ hasText: 'Chicken breast' }).first();
-    await expect(chicken).toContainText('est.');
-    await expect(chicken).toContainText('1 × 3 lb');
+    await expect(chicken).toContainText(/Good until about|Best used|Probably past its best/);
+    await expect(chicken).toContainText('3 lb');
+    await expect(chicken).not.toContainText('1 ×');
     await expectNoHorizontalScroll(page);
   });
 
@@ -28,12 +29,13 @@ test.describe.serial('inventory on a phone', () => {
     await page.goto('/inventory');
     await page.getByTestId('lot').filter({ hasText: 'Chicken breast' }).first().click();
     await expect(page.getByRole('heading', { name: 'Chicken breast' })).toBeVisible();
-    await expect(page.getByText('Receipt · PANTRY CLUB · 2026-09-28')).toBeVisible();
+    await expect(page.getByText('Pantry Club receipt')).toBeVisible();
     await expect(page.getByText('CHKN BREAST 3 LB')).toBeVisible();
-    await expect(page.getByText(/Estimated: bought 2026-09-28 \+ 5d/)).toBeVisible();
+    await expect(page.getByText('Estimated from typical shelf life')).toBeVisible();
+    await expect(page.getByText('fake-1')).toHaveCount(0);
     page.once('dialog', (d) => d.accept());
     await page.getByRole('button', { name: 'Undo this receipt' }).first().click();
     await expect(page.getByRole('status')).toContainText('Undid');
-    await expect(page.getByText('voided')).toBeVisible();
+    await expect(page.getByText('fridge · removed')).toBeVisible();
   });
 });

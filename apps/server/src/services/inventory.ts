@@ -134,11 +134,14 @@ export async function searchInventory(deps: Deps, p: Principal, input: SearchInv
 export async function getInventoryPage(deps: Deps, p: Principal, input: { location?: string }, now = new Date()) {
   const { today, links } = await context(deps, p, now);
   let views = (await activeRows(deps.db, p.householdId)).map(({ lot, food }) => toLotView(lot, food, today, links, now));
+  // Household-wide totals, so a filtered page can still show every location's count.
+  const counts = { total: views.length, use_soon: views.filter((v) => v.urgency && v.urgency !== 'later').length, by_location: {} as Record<string, number> };
+  for (const v of views) counts.by_location[v.location] = (counts.by_location[v.location] ?? 0) + 1;
   if (input.location) views = views.filter((v) => v.location === input.location);
   const byLocation: Record<string, LotView[]> = {};
   for (const v of [...views].sort((a, b) => a.food.name.localeCompare(b.food.name))) (byLocation[v.location] ??= []).push(v);
   const locations = [...new Set([...DEFAULT_LOCATIONS, ...views.map((v) => v.location)])];
-  return { today, use_soon: bucket(views), by_location: byLocation, locations };
+  return { today, use_soon: bucket(views), by_location: byLocation, locations, counts };
 }
 
 export async function getItem(deps: Deps, p: Principal, lotId: string, now = new Date()) {
@@ -176,6 +179,8 @@ export async function getItem(deps: Deps, p: Principal, lotId: string, now = new
       kind: o.kind,
       observed_at: o.observedAt.toISOString(),
       summary: o.kind === 'receipt' ? `Receipt · ${payload.store ?? 'unknown store'} · ${payload.purchased_at?.slice(0, 10) ?? ''}` : o.kind,
+      store: payload.store ?? null,
+      purchased_at: payload.purchased_at ?? null,
       line: line?.raw_text ?? null,
       price_cents: line?.price_cents ?? null,
       review_url: proposal ? links.review(proposal.id) : null,
@@ -189,6 +194,7 @@ export async function getItem(deps: Deps, p: Principal, lotId: string, now = new
   const calls = callIds.length ? await db.select().from(reasoningCalls).where(inArray(reasoningCalls.id, [...new Set(callIds)])) : [];
 
   return {
+    today,
     lot: toLotView(row.lot, row.food, today, links, now),
     food: {
       id: row.food.id,

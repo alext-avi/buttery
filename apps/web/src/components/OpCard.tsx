@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { money } from '../format';
+import { amount, money } from '../format';
 import type { Edits, OpView, Quantity } from '../types';
 import { ConfidenceBadge, ExpiryBadge } from './Badges';
 
@@ -9,21 +9,23 @@ const LOCATIONS = ['fridge', 'freezer', 'pantry', 'counter'];
 const UNITS = ['count', 'g', 'kg', 'oz', 'lb', 'ml', 'l', 'fl_oz', 'cup', 'pt', 'qt', 'gal'];
 
 function describe(q: Quantity): string {
-  if (q.kind === 'unknown' || q.amount === undefined) return 'unknown amount';
+  if (q.kind === 'unknown' || q.amount === undefined) return 'Amount unknown';
   return `${q.kind === 'approx' ? '~' : ''}${q.amount}${q.unit && q.unit !== 'count' ? ` ${q.unit}` : ''}`;
 }
 
-export function OpCard({ op, choice, onChange }: { op: OpView; choice: Choice; onChange?: (c: Choice) => void }) {
+export function OpCard({ op, today, choice, onChange }: { op: OpView; today: string; choice: Choice; onChange?: (c: Choice) => void }) {
   const [editing, setEditing] = useState(false);
 
   if (op.op === 'ignore_line' || !op.draft) {
     return (
-      <li className="card muted-card" data-testid="op">
+      <li data-testid="op">
         <div className="raw">
           {op.line.raw_text}
           {op.line.price_cents !== undefined && <span>{money(op.line.price_cents)}</span>}
         </div>
-        <div className="meta">{op.reason}</div>
+        <div className="meta">
+          {op.reason} {!op.applied && <ConfidenceBadge value={op.confidence} />}
+        </div>
       </li>
     );
   }
@@ -34,24 +36,23 @@ export function OpCard({ op, choice, onChange }: { op: OpView; choice: Choice; o
   const skipped = choice.action === 'reject';
 
   return (
-    <li className={`card${skipped ? ' skipped' : ''}`} data-testid="op">
+    <li className={skipped ? 'skipped' : undefined} data-testid="op">
       <div className="raw">
         {op.line.raw_text}
         {op.line.price_cents !== undefined && <span>{money(op.line.price_cents)}</span>}
       </div>
       <div className="title-row">
-        <strong>{name}</strong>
-        {d.is_new_food && !edits.food_id && <span className="badge">New item</span>}
-        {op.confidence !== 'high' && !op.applied && <ConfidenceBadge value={op.confidence} />}
+        <strong className="name">{name}</strong>
+        {d.is_new_food && !edits.food_id && <span className="badge new">New item</span>}
+        {!op.applied && <ConfidenceBadge value={op.confidence} />}
         {choice.action === 'edit' && !op.applied && <span className="badge">Edited</span>}
         {op.applied && <span className="badge ok">Added</span>}
         {skipped && <span className="badge">Skipped</span>}
       </div>
       <div className="meta">
-        {edits.quantity ? describe(edits.quantity) : d.quantity_text} · {edits.location ?? d.location} ·{' '}
-        {edits.expires_on ? <span>exp {edits.expires_on}</span> : <ExpiryBadge text={d.expiry_text} kind={d.expires_preview?.kind} />}
+        {edits.quantity ? describe(edits.quantity) : amount(d.quantity_text)} · {edits.location ?? d.location} ·{' '}
+        <ExpiryBadge expires={edits.expires_on ? { on: edits.expires_on, kind: 'printed' } : d.expires_preview} today={today} />
       </div>
-      {!edits.expires_on && d.expires_preview?.kind === 'estimated' && <div className="muted small">{d.expires_preview.basis}</div>}
       {op.confidence === 'low' && op.rationale && !op.applied && <div className="hint">{op.rationale}</div>}
 
       {onChange && !op.applied && !editing && (
