@@ -5,6 +5,8 @@ import type { Config } from '../config';
 import type { Db } from '../db/client';
 import { toAppError } from '../errors';
 import type { ReasoningPort } from '../reasoning/port';
+import { apiRoutes } from './apiRoutes';
+import { authRoutes } from './authRoutes';
 import { mcpRoutes } from './mcpRoute';
 import { wellKnownRoutes } from './wellKnown';
 
@@ -13,6 +15,7 @@ export type AppDeps = {
   db: Db;
   reasoning: ReasoningPort;
   resolveBearer?: BearerResolver;
+  authkit?: { loginUrl(next: string): string } | null;
 };
 
 export function createApp(deps: AppDeps) {
@@ -24,5 +27,7 @@ export function createApp(deps: AppDeps) {
   app.get('/healthz', (c) => c.json({ ok: true }));
   app.route('/.well-known', wellKnownRoutes(deps.config));
   app.route('/mcp', mcpRoutes(deps));
+  app.route('/auth', authRoutes(deps));
+  app.route('/api', apiRoutes(deps));
   return app;
 }
