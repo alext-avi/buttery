@@ -202,7 +202,11 @@ async function revertChange(tx: Tx, cs: ChangeSetHandle, r: ChangeRow, counts: C
     }
     case 'update_food': {
       const before = r.before as FoodRow & { archivedAt: string | null };
-      const [current] = await tx.select().from(foods).where(eq(foods.id, r.foodId!));
+      const after = r.after as { updatedAt: string };
+      const [current] = await tx.select().from(foods).where(eq(foods.id, r.foodId!)).for('update');
+      if (current && current.updatedAt.getTime() !== new Date(after.updatedAt).getTime()) {
+        throw new AppError('undo_conflict', 'This food changed after that edit; update it directly instead.', 409, { food_ids: [r.foodId] });
+      }
       const [restored] = await tx
         .update(foods)
         .set({

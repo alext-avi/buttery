@@ -21,7 +21,12 @@ export function Item() {
   const l = data.lot;
   const models = [...new Set(data.reasoning.map((r) => r.model).filter(Boolean))];
 
-  async function undo(changeSetId: string) {
+  async function undo(changeSetId: string, label: string) {
+    const isReceipt = label.startsWith('Receipt:');
+    const question = isReceipt
+      ? `Undo “${label}”? This removes every item added from that receipt, not just ${l.food.name}. You can review and re-apply the receipt afterwards.`
+      : `Undo “${label}”?`;
+    if (!window.confirm(question)) return;
     setBusy(true);
     try {
       const r = await api.undo(changeSetId, undoKey.current);
@@ -99,8 +104,8 @@ export function Item() {
             </div>
             {!h.undone && !h.is_undo && l.status === 'active' && (
               <div className="actions">
-                <button onClick={() => undo(h.change_set_id)} disabled={busy}>
-                  Undo
+                <button onClick={() => undo(h.change_set_id, h.label)} disabled={busy}>
+                  {h.label.startsWith('Receipt:') ? 'Undo this receipt' : 'Undo this change'}
                 </button>
               </div>
             )}

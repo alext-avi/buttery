@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import {
   exactAliasMatch,
+  lineOverlap,
   IdempotencyKeySchema,
   normalizeName,
   normalizePackage,
@@ -23,7 +24,7 @@ import type { Executor } from '../db/client';
 import { observations, proposalOps, proposals, type FoodRow } from '../db/schema';
 import type { AppDeps } from '../http/app';
 import type { Principal } from '../identity/principal';
-import { createInterimReasoning } from '../reasoning/interim';
+import { createInterimReasoning, guessKind } from '../reasoning/interim';
 import type { CanonicalizeInput, CanonicalLine, ReasoningResult, ShelfLifeInput, ShelfLifeOutput } from '../reasoning/port';
 import { persistReasoningCall } from '../reasoning/record';
 import { countOps, defaultLocationFor, type IgnoreDraft, type LineSnapshot, type LotDraft } from './drafts';
@@ -99,8 +100,31 @@ async function duplicateResult(db: Executor, observationId: string, links: Retur
   };
 }
 
+/** A negative amount is never a purchase, whatever the model or agent said. */
+function negativeLineKind(line: Line): Exclude<LineKind, 'item'> | null {
+  if ((line.price_cents ?? 0) >= 0) return null;
+  return guessKind(line.raw_text, line.price_cents) === 'return' ? 'return' : 'coupon';
+}
+
+async function findPossibleDuplicate(db: Executor, householdId: string, payload: { store: string; purchased_at: string; lines: Array<{ raw_text: string }> }, nearKey: string | null) {
+  if (nearKey) {
+    const byKey = await findObservation(db, householdId, 'nearKey', nearKey);
+    if (byKey) return byKey;
+  }
+  const sameDay = await db
+    .select()
+    .from(observations)
+    .where(and(eq(observations.householdId, householdId), eq(observations.kind, 'receipt'), sql`substring(${observations.payload}->>'purchased_at', 1, 10) = ${payload.purchased_at.slice(0, 10)}`));
+  return sameDay.find((o) => {
+    const prior = o.payload as { store?: string; lines?: Array<{ raw_text: string }> };
+    return normalizeName(prior.store ?? '') === normalizeName(payload.store) && lineOverlap(prior.lines ?? [], payload.lines) >= 0.8;
+  });
+}
+
 function resolveCanonical(c: CanonicalLine, line: Line, catalog: FoodRow[], callId: string): LineRes {
   const pkg = normalizePackage(c.package ?? line.hint?.package);
+  const negative = negativeLineKind(line);
+  if (negative) return { kind: 'non_item', lineKind: negative, confidence: 'high', rationale: 'Negative amount: not a purchase', callId };
   if (c.line_kind !== 'item') return { kind: 'non_item', lineKind: c.line_kind, confidence: c.match.confidence, rationale: c.rationale, callId };
   if (c.match.food_id !== 'new') {
     const food = catalog.find((f) => f.id === c.match.food_id);
@@ -192,7 +216,7 @@ export async function submitReceipt(deps: Deps, p: Principal, input: SubmitRecei
   const nearKey = receiptNearKey(payload);
   const existing = await findObservation(db, p.householdId, 'fingerprint', fingerprint);
   if (existing) return runIdempotent(db, scope, (tx) => duplicateResult(tx, existing.id, links));
-  const near = nearKey ? await findObservation(db, p.householdId, 'nearKey', nearKey) : undefined;
+  const near = await findPossibleDuplicate(db, p.householdId, payload, nearKey);
 
   const catalog = await loadCatalog(db, p.householdId);
   const calls: Array<{ id: string; result: ReasoningResult<unknown> }> = [];
@@ -202,6 +226,11 @@ export async function submitReceipt(deps: Deps, p: Principal, input: SubmitRecei
   for (const line of payload.lines) {
     if (line.line_kind && line.line_kind !== 'item') {
       resolutions.set(line.line_id, { kind: 'non_item', lineKind: line.line_kind, confidence: 'high', rationale: `Marked as ${line.line_kind} on the receipt`, callId: null });
+      continue;
+    }
+    const negative = negativeLineKind(line);
+    if (negative) {
+      resolutions.set(line.line_id, { kind: 'non_item', lineKind: negative, confidence: 'high', rationale: 'Negative amount: not a purchase', callId: null });
       continue;
     }
     const exact = exactAliasMatch(line.raw_text, catalog);
@@ -290,6 +319,8 @@ export async function submitReceipt(deps: Deps, p: Principal, input: SubmitRecei
         payload: payload as unknown as Record<string, unknown>,
         fingerprint,
         nearKey,
+        possibleDuplicateOf: near?.id ?? null,
+        uncertainties,
       })
       .onConflictDoNothing()
       .returning({ id: observations.id });

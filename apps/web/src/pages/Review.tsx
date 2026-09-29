@@ -14,6 +14,7 @@ export function Review() {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ResolveResponse | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [notDuplicate, setNotDuplicate] = useState(false);
   const applyKey = useRef(newKey());
   const undoKey = useRef(newKey());
 
@@ -41,7 +42,13 @@ export function Review() {
         const c = o.op === 'ignore_line' ? ({ action: 'accept' } as Choice) : choiceFor(o);
         return c.action === 'edit' ? { op_id: o.op_id, action: 'edit', edits: c.edits } : { op_id: o.op_id, action: c.action };
       });
-      const res = await api.resolve(proposalId, { decisions, accept_remaining: false, apply: true, idempotency_key: applyKey.current });
+      const res = await api.resolve(proposalId, {
+        decisions,
+        accept_remaining: false,
+        apply: true,
+        idempotency_key: applyKey.current,
+        confirm_possible_duplicate: notDuplicate,
+      });
       applyKey.current = newKey();
       setChoices({});
       setResult(res);
@@ -67,6 +74,10 @@ export function Review() {
       setBusy(false);
     }
   }
+
+  const duplicate = data.observation.possible_duplicate_of;
+  const needsDuplicateConfirm = Boolean(duplicate) && open.some((o) => o.op === 'add_lot') && !notDuplicate;
+  const otherNotes = data.observation.uncertainties.filter((u) => !u.includes('already recorded'));
 
   const card = (o: OpView) => <OpCard key={o.op_id} op={o} choice={choiceFor(o)} onChange={o.applied ? undefined : setChoice(o.op_id)} />;
 
@@ -103,6 +114,25 @@ export function Review() {
           {actionError}
         </div>
       )}
+      {duplicate && open.some((o) => o.op === 'add_lot') && (
+        <div className="banner warn" role="alert">
+          <strong>This receipt may already be recorded.</strong> Another receipt from the same store and day has the same total or
+          nearly the same lines. Applying both would count these items twice.{' '}
+          {duplicate.review_url && <Link to={new URL(duplicate.review_url).pathname}>Open the earlier receipt</Link>}
+          <label className="check">
+            <input type="checkbox" checked={notDuplicate} onChange={(e) => setNotDuplicate(e.target.checked)} /> This is a different purchase
+          </label>
+        </div>
+      )}
+      {otherNotes.length > 0 && (
+        <ul className="notes">
+          {otherNotes.map((n) => (
+            <li key={n} className="muted small">
+              {n}
+            </li>
+          ))}
+        </ul>
+      )}
 
       {needsLook.length > 0 && (
         <section>
@@ -125,7 +155,7 @@ export function Review() {
 
       {open.length > 0 && (
         <div className="action-bar">
-          <button className="primary" onClick={apply} disabled={busy}>
+          <button className="primary" onClick={apply} disabled={busy || needsDuplicateConfirm}>
             {busy ? 'Saving…' : adding > 0 ? `Add ${adding} item${adding === 1 ? '' : 's'}` : 'Confirm'}
           </button>
         </div>

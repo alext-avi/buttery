@@ -53,15 +53,32 @@ export function withLineIds(p: ReceiptPayload): ReceiptPayloadWithIds {
   };
 }
 
-type Identity = Pick<ReceiptPayload, 'store' | 'purchased_at' | 'receipt_number' | 'total_cents'>;
+type Identity = Pick<ReceiptPayload, 'store' | 'purchased_at' | 'receipt_number' | 'total_cents'> & { lines?: Array<{ raw_text: string }> };
+
+const lineSet = (lines: Array<{ raw_text: string }> | undefined) => [...new Set((lines ?? []).map((l) => normalizeName(l.raw_text)).filter(Boolean))].sort();
 
 export function receiptFingerprint<T extends Identity>(r: T): string {
   const store = normalizeName(r.store);
   if (r.receipt_number) return sha256Hex(['rn', store, normalizeName(r.receipt_number), r.purchased_at.slice(0, 10)].join('|'));
-  return sha256Hex(['ts', store, r.purchased_at.slice(0, 16), String(r.total_cents ?? '')].join('|'));
+  const hasTime = r.purchased_at.length >= 16;
+  if (hasTime && r.total_cents !== undefined) return sha256Hex(['ts', store, r.purchased_at.slice(0, 16), String(r.total_cents)].join('|'));
+  // Without a receipt number, a precise time and a total, identity must include what was bought:
+  // two different same-day trips must not collapse into one receipt.
+  return sha256Hex(['lines', store, r.purchased_at.slice(0, 16), String(r.total_cents ?? ''), lineSet(r.lines).join('\n')].join('|'));
 }
 
 export function receiptNearKey<T extends Identity>(r: T): string | null {
   if (r.total_cents === undefined) return null;
   return sha256Hex(['near', normalizeName(r.store), r.purchased_at.slice(0, 10), String(r.total_cents)].join('|'));
+}
+
+/** Share of distinct lines the two receipts have in common, relative to the longer one (0–1). */
+export function lineOverlap(a: Array<{ raw_text: string }>, b: Array<{ raw_text: string }>): number {
+  const sa = new Set(lineSet(a));
+  const sb = new Set(lineSet(b));
+  const longest = Math.max(sa.size, sb.size);
+  if (!longest) return 0;
+  let shared = 0;
+  for (const x of sa) if (sb.has(x)) shared++;
+  return shared / longest;
 }

@@ -148,4 +148,18 @@ describe('resolveProposal', () => {
     await expect(resolveProposal(deps, other.principal, { proposal_id: r.proposal_id, decisions: [], accept_remaining: true, apply: true, idempotency_key: 'apply-0013' }, NOW)).rejects.toMatchObject({ code: 'not_found' });
     expect(await db.select().from(lots).where(and(eq(lots.householdId, other.principal.householdId)))).toHaveLength(0);
   });
+
+  it('requires explicit confirmation before applying a possible duplicate', async () => {
+    const { principal, deps } = await setup();
+    const { receipt_number: _n, ...noNumber } = fixtureReceipt('warehouse');
+    const dup = await submitReceipt(deps, principal, { kind: 'receipt', payload: noNumber, idempotency_key: 'rcpt-dup-1' });
+    const view = await getProposalView(deps, principal, dup.proposal_id, NOW);
+    expect(view.observation.possible_duplicate_of).toMatchObject({ observation_id: expect.any(String), review_url: expect.stringContaining('/review/') });
+    expect(view.observation.uncertainties.join(' ')).toContain('already recorded');
+    const input = { proposal_id: dup.proposal_id, decisions: [], accept_remaining: true, apply: true, idempotency_key: 'apply-dup-1' };
+    await expect(resolveProposal(deps, principal, input, NOW)).rejects.toMatchObject({ code: 'possible_duplicate' });
+    expect(await activeLots()).toHaveLength(0);
+    const ok = await resolveProposal(deps, principal, { ...input, idempotency_key: 'apply-dup-2', confirm_possible_duplicate: true }, NOW);
+    expect(ok.created_lot_ids).toHaveLength(6);
+  });
 });

@@ -32,7 +32,17 @@ export type OpView = {
 
 export type ProposalView = {
   proposal: { id: string; status: string; created_at: string };
-  observation: { id: string; kind: string; store: string | null; purchased_at: string | null; recorded_at: string; recorded_by: string | null; via: string | null };
+  observation: {
+    id: string;
+    kind: string;
+    store: string | null;
+    purchased_at: string | null;
+    recorded_at: string;
+    recorded_by: string | null;
+    via: string | null;
+    possible_duplicate_of: { observation_id: string; review_url: string | null } | null;
+    uncertainties: string[];
+  };
   ops: OpView[];
   counts: { lines: number; items: number; pending: number; applied: number; low_confidence: number };
   links: { review: string; inventory: string };

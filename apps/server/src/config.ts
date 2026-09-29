@@ -9,6 +9,7 @@ const EnvSchema = z.object({
   SIGNUP_MODE: z.enum(['open', 'closed']).default('open'),
   AUTHKIT_DOMAIN: z.url().optional(),
   AUTHKIT_ISSUER: z.url().optional(),
+  AUTHKIT_AUDIENCE: z.string().optional(),
   WORKOS_CLIENT_ID: z.string().optional(),
   WORKOS_API_KEY: z.string().optional(),
 });

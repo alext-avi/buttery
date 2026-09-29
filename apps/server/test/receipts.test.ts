@@ -116,4 +116,48 @@ describe('submitReceipt', () => {
     const ids = new Set((await db.select().from(reasoningCalls)).map((c) => c.id));
     expect(ops.every((o) => o.reasoningCallId && ids.has(o.reasoningCallId))).toBe(true);
   });
+
+  it('flags a cropped second photo (no receipt number, no total) by line overlap', async () => {
+    const { principal } = await seedUser(db);
+    const deps = testDeps();
+    const a = await submit(deps, principal);
+    const { receipt_number: _n, total_cents: _t, ...cropped } = fixtureReceipt('warehouse');
+    const b = await submit(deps, principal, cropped, 'rcpt-crop-1');
+    expect(b.duplicate_of).toBeNull();
+    expect(b.possible_duplicate_of).toBe(a.observation_id);
+  });
+
+  it('records two different same-day trips without time or total as separate receipts', async () => {
+    const { principal } = await seedUser(db);
+    const deps = testDeps();
+    const trip = (raw: string) => ({ store: 'CORNER PANTRY', purchased_at: '2026-09-29', lines: [{ raw_text: raw }] });
+    const milk = await submit(deps, principal, trip('MILK'), 'rcpt-trip-1');
+    const bread = await submit(deps, principal, trip('BREAD'), 'rcpt-trip-2');
+    expect(bread.duplicate_of).toBeNull();
+    expect(bread.observation_id).not.toBe(milk.observation_id);
+    expect(await db.select().from(observations)).toHaveLength(2);
+  });
+
+  it('never proposes lots for untagged negative-price or non-food lines, even when reasoning throws', async () => {
+    const { principal } = await seedUser(db);
+    const payload = {
+      store: 'PANTRY CLUB',
+      purchased_at: '2026-09-28T18:42',
+      lines: [
+        { raw_text: 'TPD/GRK YOGURT', price_cents: -300 },
+        { raw_text: 'KS PAPER TOWEL 12 RL', price_cents: 1999 },
+        { raw_text: 'BANANAS', quantity: 1.25, unit: 'lb', price_cents: 80 },
+      ],
+    };
+    for (const [deps, key] of [[testDeps({ reasoning: createFakeReasoning({ fail: true }) }), 'rcpt-untagged-1'], [testDeps(), 'rcpt-untagged-2']] as const) {
+      await resetDb();
+      const { principal: p } = await seedUser(db);
+      const r = await submit(deps, p, payload, key);
+      const ops = await opsFor(r.proposal_id);
+      expect(ops['TPD/GRK YOGURT']?.op).toBe('ignore_line');
+      expect(ops['BANANAS']?.op).toBe('add_lot');
+      if (key === 'rcpt-untagged-1') expect(ops['KS PAPER TOWEL 12 RL']?.op).toBe('ignore_line');
+    }
+    void principal;
+  });
 });

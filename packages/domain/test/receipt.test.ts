@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hashJson, receiptFingerprint, receiptNearKey, ReceiptPayloadSchema, withLineIds } from '../src';
+import { hashJson, lineOverlap, receiptFingerprint, receiptNearKey, ReceiptPayloadSchema, withLineIds } from '../src';
 
 const base = {
   store: 'PANTRY CLUB',
@@ -37,5 +37,19 @@ describe('receipt identity', () => {
 
   it('validates the purchase timestamp format', () => {
     expect(() => ReceiptPayloadSchema.parse({ ...base, purchased_at: 'yesterday' })).toThrow();
+  });
+
+  it('keeps different same-day trips apart when time and total are missing', () => {
+    const milk = { store: 'CORNER PANTRY', purchased_at: '2026-09-29', lines: [{ raw_text: 'MILK' }] };
+    const bread = { ...milk, lines: [{ raw_text: 'BREAD' }] };
+    expect(receiptFingerprint(milk)).not.toBe(receiptFingerprint(bread));
+    expect(receiptFingerprint(milk)).toBe(receiptFingerprint({ ...milk, lines: [{ raw_text: ' milk ' }] }));
+  });
+
+  it('measures line overlap between two transcriptions', () => {
+    const a = [{ raw_text: 'WHOLE MILK 1 GAL' }, { raw_text: 'EGGS 24 CT' }, { raw_text: 'BABY SPINACH 16 OZ' }];
+    expect(lineOverlap(a, [...a].reverse())).toBe(1);
+    expect(lineOverlap(a, [{ raw_text: 'whole milk 1 gal' }, { raw_text: 'EGGS 24 CT' }])).toBeCloseTo(2 / 3);
+    expect(lineOverlap(a, [{ raw_text: 'BREAD' }])).toBe(0);
   });
 });

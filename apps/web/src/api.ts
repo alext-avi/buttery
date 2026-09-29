@@ -32,7 +32,7 @@ export const api = {
   authConfig: () => request<{ authkit: boolean; signup: boolean }>('GET', '/auth/config'),
   tokenLogin: (token: string, next: string) => request<{ ok: true; next: string }>('POST', '/auth/token-login', { token, next }),
   proposal: (id: string) => request<ProposalView>('GET', `/api/proposals/${id}`),
-  resolve: (id: string, body: { decisions: Decision[]; accept_remaining: boolean; apply: boolean; idempotency_key: string }) =>
+  resolve: (id: string, body: { decisions: Decision[]; accept_remaining: boolean; apply: boolean; idempotency_key: string; confirm_possible_duplicate?: boolean }) =>
     request<ResolveResponse>('POST', `/api/proposals/${id}/resolve`, body),
   inventory: (location?: string) => request<InventoryResponse>('GET', `/api/inventory${location ? `?location=${encodeURIComponent(location)}` : ''}`),
   item: (id: string) => request<ItemResponse>('GET', `/api/items/${id}`),

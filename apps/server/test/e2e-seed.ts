@@ -32,8 +32,15 @@ const r = await submitReceipt({ db, config: loadConfig(), reasoning: createFakeR
   idempotency_key: 'e2e-seed-warehouse',
 });
 
+const { receipt_number: _n, ...noNumber } = fixtureReceipt('warehouse');
+const dup = await submitReceipt({ db, config: loadConfig(), reasoning: createFakeReasoning() }, principal, {
+  kind: 'receipt',
+  payload: noNumber,
+  idempotency_key: 'e2e-seed-warehouse-dup',
+});
+
 const out = fileURLToPath(new URL('../.e2e/', import.meta.url));
 mkdirSync(out, { recursive: true });
-writeFileSync(`${out}/state.json`, JSON.stringify({ token: E2E_TOKEN, proposal_id: r.proposal_id }));
+writeFileSync(`${out}/state.json`, JSON.stringify({ token: E2E_TOKEN, proposal_id: r.proposal_id, dup_proposal_id: dup.proposal_id }));
 await db.$client.end();
 console.log('e2e seed ready');

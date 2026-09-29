@@ -26,6 +26,7 @@ export const ResolveProposalInputSchema = z.object({
   decisions: z.array(DecisionSchema).max(300).default([]),
   accept_remaining: z.boolean().default(false).describe('Accept every still-pending line. Only when the user approved everything.'),
   apply: z.boolean().default(true).describe('Apply accepted lines to inventory now'),
+  confirm_possible_duplicate: z.boolean().default(false).describe('Required when the receipt may duplicate one already recorded; set only after the user confirms it is a different purchase'),
   idempotency_key: IdempotencyKeySchema,
 });
 export type ResolveProposalInput = z.infer<typeof ResolveProposalInputSchema>;
@@ -60,7 +61,19 @@ export type OpView = {
 
 export type ProposalView = {
   proposal: { id: string; status: string; created_at: string };
-  observation: { id: string; kind: string; store: string | null; purchased_at: string | null; receipt_number: string | null; total_cents: number | null; recorded_at: string; recorded_by: string | null; via: string | null };
+  observation: {
+    id: string;
+    kind: string;
+    store: string | null;
+    purchased_at: string | null;
+    receipt_number: string | null;
+    total_cents: number | null;
+    recorded_at: string;
+    recorded_by: string | null;
+    via: string | null;
+    possible_duplicate_of: { observation_id: string; review_url: string | null } | null;
+    uncertainties: string[];
+  };
   ops: OpView[];
   counts: ReturnType<typeof countOps>;
   links: { review: string; inventory: string };
@@ -117,6 +130,7 @@ export async function getProposalView(deps: Deps, p: Principal, proposalId: stri
   const [actor] = await db.select().from(users).where(eq(users.id, obs!.actorUserId));
   const [conn] = obs!.connectionId ? await db.select().from(connections).where(eq(connections.id, obs!.connectionId)) : [];
   const payload = obs!.payload as { store?: string; purchased_at?: string; receipt_number?: string; total_cents?: number };
+  const [dupProposal] = obs!.possibleDuplicateOf ? await db.select().from(proposals).where(eq(proposals.observationId, obs!.possibleDuplicateOf)) : [];
   return {
     proposal: { id: proposal.id, status: proposal.status, created_at: proposal.createdAt.toISOString() },
     observation: {
@@ -129,6 +143,8 @@ export async function getProposalView(deps: Deps, p: Principal, proposalId: stri
       recorded_at: obs!.recordedAt.toISOString(),
       recorded_by: actor?.displayName ?? actor?.email ?? null,
       via: conn?.clientName ?? null,
+      possible_duplicate_of: obs!.possibleDuplicateOf ? { observation_id: obs!.possibleDuplicateOf, review_url: dupProposal ? links.review(dupProposal.id) : null } : null,
+      uncertainties: obs!.uncertainties,
     },
     ops: ops.map((o) => toOpView(o, foodsById, today)),
     counts: countOps(ops),
@@ -169,7 +185,8 @@ async function applyAddLot(tx: Tx, cs: ChangeSetHandle, op: ProposalOpRow, obser
   });
 }
 
-export async function resolveProposal(deps: Deps, p: Principal, input: ResolveProposalInput, now = new Date()) {
+export async function resolveProposal(deps: Deps, p: Principal, raw: z.input<typeof ResolveProposalInputSchema>, now = new Date()) {
+  const input: ResolveProposalInput = ResolveProposalInputSchema.parse(raw);
   const { db } = deps;
   const { idempotency_key, ...request } = input;
   const outcome = await runIdempotent(db, { householdId: p.householdId, tool: 'resolve_proposal', key: idempotency_key, request }, async (tx) => {
@@ -206,6 +223,14 @@ export async function resolveProposal(deps: Deps, p: Principal, input: ResolvePr
 
     let appliedChangeSetId: string | null = null;
     const createdLotIds: string[] = [];
+    if (input.apply && observation!.possibleDuplicateOf && !input.confirm_possible_duplicate) {
+      throw new AppError(
+        'possible_duplicate',
+        'This receipt may duplicate one already recorded. Ask the user to confirm it is a different purchase, then retry with confirm_possible_duplicate: true.',
+        409,
+        { possible_duplicate_of: observation!.possibleDuplicateOf },
+      );
+    }
     if (input.apply) {
       const toApply = (await loadOps()).filter((o) => (o.decision === 'accepted' || o.decision === 'edited') && !o.appliedAt);
       const hasLots = toApply.some((o) => o.op === 'add_lot');

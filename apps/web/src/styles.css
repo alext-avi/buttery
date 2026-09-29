@@ -64,3 +64,6 @@ input, select { font: inherit; color: var(--text); background: var(--bg); border
 dl.facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; margin: 0; }
 dt { color: var(--muted); }
 dd { margin: 0; overflow-wrap: anywhere; }
+.banner.warn { border-color: var(--warn); }
+.banner .check { margin-top: 10px; color: var(--text); font-size: 0.95rem; }
+ul.notes { list-style: none; padding: 0; margin: 8px 0; }

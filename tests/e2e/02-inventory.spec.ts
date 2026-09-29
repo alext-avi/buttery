@@ -31,7 +31,8 @@ test.describe.serial('inventory on a phone', () => {
     await expect(page.getByText('Receipt · PANTRY CLUB · 2026-09-28')).toBeVisible();
     await expect(page.getByText('CHKN BREAST 3 LB')).toBeVisible();
     await expect(page.getByText(/Estimated: bought 2026-09-28 \+ 5d/)).toBeVisible();
-    await page.getByRole('button', { name: 'Undo' }).first().click();
+    page.once('dialog', (d) => d.accept());
+    await page.getByRole('button', { name: 'Undo this receipt' }).first().click();
     await expect(page.getByRole('status')).toContainText('Undid');
     await expect(page.getByText('voided')).toBeVisible();
   });

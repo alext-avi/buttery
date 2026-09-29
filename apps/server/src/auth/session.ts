@@ -43,6 +43,16 @@ export async function principalFromSession(db: Db, s: SessionData): Promise<Prin
   return conn ? { userId: conn.userId, householdId: conn.householdId, connectionId: conn.id, clientName: conn.clientName } : null;
 }
 
+const LOCAL = 'http://buttery.local';
+
+/** Only same-site paths survive; backslashes, control characters and protocol-relative tricks fall back. */
 export function safeNext(next: unknown): string {
-  return typeof next === 'string' && next.startsWith('/') && !next.startsWith('//') ? next : '/inventory';
+  const fallback = '/inventory';
+  if (typeof next !== 'string' || !next.startsWith('/') || /[\\\u0000-\u001f\u007f]/.test(next)) return fallback;
+  try {
+    const u = new URL(next, LOCAL);
+    return u.origin === LOCAL ? `${u.pathname}${u.search}${u.hash}` : fallback;
+  } catch {
+    return fallback;
+  }
 }

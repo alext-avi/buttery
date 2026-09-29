@@ -36,6 +36,7 @@ export function createAuthkit(config: Config, db: Db, o: Overrides = {}): Authki
   if (!config.AUTHKIT_DOMAIN || !config.WORKOS_CLIENT_ID || !config.WORKOS_API_KEY) return null;
   const clientId = config.WORKOS_CLIENT_ID;
   const issuer = config.AUTHKIT_ISSUER ?? config.AUTHKIT_DOMAIN;
+  if (!config.AUTHKIT_AUDIENCE) console.warn('AUTHKIT_AUDIENCE is not set: MCP accepts any access token from this AuthKit environment. Set it to the aud claim AuthKit issues for Buttery.');
   const jwks = o.jwks ?? createRemoteJWKSet(new URL(`${config.AUTHKIT_DOMAIN}/oauth2/jwks`));
   const workos = new WorkOS(config.WORKOS_API_KEY, { clientId });
   const toUser = (u: { id: string; email: string; firstName: string | null; lastName: string | null }): AuthkitUser => ({ id: u.id, email: u.email, firstName: u.firstName, lastName: u.lastName });
@@ -48,7 +49,7 @@ export function createAuthkit(config: Config, db: Db, o: Overrides = {}): Authki
     async resolveBearer(token) {
       let payload;
       try {
-        ({ payload } = await jwtVerify(token, jwks, { issuer }));
+        ({ payload } = await jwtVerify(token, jwks, { issuer, ...(config.AUTHKIT_AUDIENCE ? { audience: config.AUTHKIT_AUDIENCE } : {}) }));
       } catch {
         return null;
       }

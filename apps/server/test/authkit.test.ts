@@ -21,8 +21,8 @@ const config = loadConfig({
 async function keys() {
   const { publicKey, privateKey } = await generateKeyPair('RS256');
   const jwks = createLocalJWKSet({ keys: [{ ...(await exportJWK(publicKey)), kid: 'k1', alg: 'RS256' }] });
-  const sign = (claims: { sub?: string; iss?: string; exp?: string; client_id?: string }) =>
-    new SignJWT({ client_id: claims.client_id ?? 'client_claude' })
+  const sign = (claims: { sub?: string; iss?: string; exp?: string; client_id?: string; aud?: string }) =>
+    new SignJWT({ client_id: claims.client_id ?? 'client_claude', ...(claims.aud ? { aud: claims.aud } : {}) })
       .setProtectedHeader({ alg: 'RS256', kid: 'k1' })
       .setIssuer(claims.iss ?? ISSUER)
       .setSubject(claims.sub ?? 'user_01')
@@ -85,5 +85,14 @@ describe('AuthKit', () => {
     const cookie = cb.headers.get('set-cookie')!.split(';')[0]!;
     const me = (await (await app.request('/api/me', { headers: { cookie } })).json() as any);
     expect(me.user.email).toBe('alex@example.com');
+  });
+
+  it('enforces the configured audience', async () => {
+    const { jwks, sign } = await keys();
+    const strict = loadConfig({ DATABASE_URL: TEST_DB_URL, SESSION_SECRET: 'x'.repeat(32), PUBLIC_BASE_URL: 'https://buttery.test', AUTHKIT_DOMAIN: ISSUER, WORKOS_CLIENT_ID: 'client_test', WORKOS_API_KEY: 'sk_test_dummy', AUTHKIT_AUDIENCE: 'https://buttery.test/mcp' });
+    const ak = createAuthkit(strict, db, { jwks, fetchUser })!;
+    expect(await ak.resolveBearer(await sign({ aud: 'https://other.example/mcp' }))).toBeNull();
+    expect(await ak.resolveBearer(await sign({}))).toBeNull();
+    expect(await ak.resolveBearer(await sign({ aud: 'https://buttery.test/mcp' }))).not.toBeNull();
   });
 });

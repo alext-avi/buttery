@@ -28,4 +28,15 @@ describe('upsertFood', () => {
     const [f] = await db.select().from(foods).where(eq(foods.normalizedName, 'oat milk'));
     expect(f).toMatchObject({ isStaple: false, defaultLocation: null });
   });
+
+  it('refuses to undo a food update when the food changed afterwards', async () => {
+    const { principal } = await seedUser(db);
+    const deps = testDeps();
+    await upsertFood(deps, principal, UpsertFoodInputSchema.parse({ name: 'Oat milk', perishability: 'shelf_stable', idempotency_key: 'food-0010' }));
+    const alias = await upsertFood(deps, principal, UpsertFoodInputSchema.parse({ name: 'Oat milk', aliases: ['OATLY'], idempotency_key: 'food-0011' }));
+    await upsertFood(deps, principal, UpsertFoodInputSchema.parse({ name: 'Oat milk', shelf_life_days: { opened: 10 }, idempotency_key: 'food-0012' }));
+    await expect(undoChangeSet(db, principal, { change_set_id: alias.change_set_id, idempotency_key: 'undo-food-2' })).rejects.toMatchObject({ code: 'undo_conflict' });
+    const [f] = await db.select().from(foods).where(eq(foods.normalizedName, 'oat milk'));
+    expect(f?.shelfLife).toMatchObject({ opened: { days: 10 } });
+  });
 });

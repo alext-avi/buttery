@@ -74,6 +74,8 @@ export const observations = pgTable(
     payload: jsonb('payload').$type<Record<string, unknown>>().notNull(),
     fingerprint: text('fingerprint'),
     nearKey: text('near_key'),
+    possibleDuplicateOf: uuid('possible_duplicate_of'),
+    uncertainties: jsonb('uncertainties').$type<string[]>().notNull().default([]),
     status: text('status', { enum: ['open', 'resolved'] }).notNull().default('open'),
   },
   (t) => [unique('observations_fingerprint').on(t.householdId, t.fingerprint), index('observations_near_key').on(t.householdId, t.nearKey)],

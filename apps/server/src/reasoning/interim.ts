@@ -3,9 +3,12 @@ import type { CanonicalizeInput, CanonicalizeOutput, ReasoningCallRecord, Reason
 
 const SIZE_TOKENS = /\b\d+(\.\d+)?\s*(x\s*\d+(\.\d+)?\s*)?(oz|lb|lbs|gal|ct|count|pk|pack|can|fl|qt|l|ml|g|kg)\b/gi;
 
-function guessKind(raw: string): LineKind {
-  if (/\b(coupon|discount|savings|instant)\b/i.test(raw)) return 'coupon';
+const NON_FOOD = /\b(paper towels?|towels?|toilet|tissue|napkins?|detergent|soap|dish ?wash|bleach|batter(y|ies)|trash|garbage|bags?|foil|wrap|plates?|cups?|shampoo|toothpaste|diapers?|wipes|light ?bulbs?)\b|\b\d+\s*(rl|roll|rolls)\b/i;
+
+export function guessKind(raw: string, priceCents?: number): LineKind {
   if (/^(return|refund)\b/i.test(raw.trim())) return 'return';
+  if (/\b(coupon|discount|savings|instant)\b/i.test(raw) || (priceCents ?? 0) < 0) return 'coupon';
+  if (NON_FOOD.test(raw)) return 'non_food';
   return 'item';
 }
 
@@ -40,7 +43,7 @@ export function createInterimReasoning(): ReasoningPort {
   return {
     async canonicalizeItems(input: CanonicalizeInput) {
       const lines = input.lines.map((l) => {
-        const kind = l.line_kind ?? guessKind(l.raw_text);
+        const kind = l.line_kind ?? guessKind(l.raw_text, l.price_cents);
         const candidates = input.candidates[l.line_id] ?? [];
         const best = candidates
           .map((c) => ({ c, score: Math.max(similarity(l.raw_text, c.name), ...c.aliases.map((a) => similarity(l.raw_text, a))) }))
