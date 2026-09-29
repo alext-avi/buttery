@@ -9,6 +9,7 @@ import { createPat } from '../../src/identity/tokens';
 import type { Principal } from '../../src/identity/principal';
 import type { Db } from '../../src/db/client';
 import { TEST_DB_URL, testDb } from './db';
+import { createFakeReasoning } from './fakeReasoning';
 
 export function testConfig() {
   return loadConfig({
@@ -19,7 +20,7 @@ export function testConfig() {
 }
 
 export function testDeps(overrides: Partial<AppDeps> = {}): AppDeps {
-  return { config: testConfig(), db: testDb(), ...overrides };
+  return { config: testConfig(), db: testDb(), reasoning: createFakeReasoning(), ...overrides };
 }
 
 export async function seedUser(

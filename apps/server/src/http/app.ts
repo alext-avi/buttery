@@ -4,12 +4,14 @@ import type { BearerResolver } from '../auth/bearer';
 import type { Config } from '../config';
 import type { Db } from '../db/client';
 import { toAppError } from '../errors';
+import type { ReasoningPort } from '../reasoning/port';
 import { mcpRoutes } from './mcpRoute';
 import { wellKnownRoutes } from './wellKnown';
 
 export type AppDeps = {
   config: Config;
   db: Db;
+  reasoning: ReasoningPort;
   resolveBearer?: BearerResolver;
 };
 
