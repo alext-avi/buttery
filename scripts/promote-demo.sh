@@ -50,7 +50,10 @@ fi
 "${DC[@]}" up --detach --wait --wait-timeout 120 db
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 BACKUP=""
-if [[ -n "$PREVIOUS_ID" ]]; then
+# Back up whenever the database already holds tables, even if no app container exists
+# (the volume can outlive it after `compose down` or a manual container removal).
+TABLES="$("${DC[@]}" exec -T db psql --username=buttery --dbname=buttery_demo -tAc "select count(*) from pg_tables where schemaname = 'public'")"
+if [[ "${TABLES//[[:space:]]/}" != "0" ]]; then
   BACKUP="$STATE/backups/$STAMP.dump"
   "${DC[@]}" exec -T db pg_dump --username=buttery --dbname=buttery_demo --format=custom > "$BACKUP"
   echo "Pre-migration database backup saved: $BACKUP"

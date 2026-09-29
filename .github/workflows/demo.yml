@@ -105,7 +105,7 @@ jobs:
         id: publish
         env:
           RELEASE_TAG: ${{ steps.image.outputs.tag }}
-          GHCR_USER: ${{ github.actor }}
+          GHCR_USER: ${{ github.repository_owner }} # any name works with GITHUB_TOKEN; bot actors contain [ ]
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           printf '%s\n' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USER" --password-stdin
@@ -115,7 +115,7 @@ jobs:
       - name: Promote to Vultr and check HTTPS
         env:
           RELEASE_IMAGE: ${{ steps.publish.outputs.image }}
-          GHCR_USER: ${{ github.actor }}
+          GHCR_USER: ${{ github.repository_owner }} # any name works with GITHUB_TOKEN; bot actors contain [ ]
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
           DEPLOY_USER: ${{ vars.DEPLOY_USER }}
