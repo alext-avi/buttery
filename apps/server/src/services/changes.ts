@@ -200,6 +200,28 @@ async function revertChange(tx: Tx, cs: ChangeSetHandle, r: ChangeRow, counts: C
       counts.aliases_removed++;
       return;
     }
+    case 'update_food': {
+      const before = r.before as FoodRow & { archivedAt: string | null };
+      const [current] = await tx.select().from(foods).where(eq(foods.id, r.foodId!));
+      const [restored] = await tx
+        .update(foods)
+        .set({
+          name: before.name,
+          normalizedName: before.normalizedName,
+          aliases: before.aliases,
+          category: before.category,
+          perishability: before.perishability,
+          shelfLife: before.shelfLife,
+          defaultLocation: before.defaultLocation,
+          isStaple: before.isStaple,
+          archivedAt: before.archivedAt ? new Date(before.archivedAt) : null,
+          updatedAt: new Date(),
+        })
+        .where(eq(foods.id, r.foodId!))
+        .returning();
+      await recordChange(tx, cs, { op: 'restore_food', foodId: r.foodId, before: current, after: restored });
+      return;
+    }
     default:
       throw new AppError('not_supported', `Undo of "${r.op}" is not supported yet.`, 422);
   }
