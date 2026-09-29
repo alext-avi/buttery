@@ -64,7 +64,7 @@ apps, push notifications, sharing outside the household.
 | Web access | AuthKit login session as a long-lived cookie. Agents return plain deep links. | Links in chat history grant nothing by themselves. Object-scoped no-login links can be added later if phone login proves annoying. |
 | Storage | **PostgreSQL 17** in a container. | Transactions spanning state + change log; unique constraints for idempotency/fingerprints; `SELECT … FOR UPDATE`; joins for coverage; `jsonb` for observation payloads. Row-level security available later for tenant isolation. |
 | State model | Current-state tables + append-only change log written in the same transaction. Undo = compensating change set. | Full event sourcing rejected: rebuild/projection machinery without MVP benefit. |
-| Hosting | Docker Compose (`app` + `postgres`) on this Mac, joined to the agentdock Docker network; public HTTPS via **Tailscale Funnel**. **Nice-to-have:** the same Compose stack on a Crusoe Cloud VM. | Phone access from day one at zero cost. Risk: unavailable when the Mac sleeps. Moving to a Crusoe Cloud VM fixes that and keeps the whole stack on the sponsor's platform. |
+| Hosting | **Vultr Cloud Compute** VM behind Caddy (Let's Encrypt HTTPS), deployed by GitHub Actions on every merge to `main`: one image, rehearsed against a throwaway database, published to GHCR, promoted by digest with a pre-migration backup and HTTPS smoke checks. Development: Docker Compose (`app` + `postgres`), optionally on the agentdock network. *(Revised 2026-09-29; the original plan used Tailscale Funnel from a Mac.)* | Always on, public HTTPS for claude.ai connectors and phones, no dependency on a laptop being awake. See `docs/runbooks/deploy-vultr.md`. |
 
 ## 3. Architecture
 
@@ -89,7 +89,7 @@ flowchart LR
   CRU["Crusoe Managed Inference<br/>(open models, configurable)"]
   AUTH["WorkOS AuthKit<br/>(OAuth AS · login)"]
 
-  C1 & C2 & C3 -- "HTTPS · Tailscale Funnel" --> MCP
+  C1 & C2 & C3 -- "HTTPS · Vultr + Caddy" --> MCP
   B --> API
   MCP --> SVC
   API --> SVC
@@ -475,12 +475,12 @@ Lists · Recipes).
 
 **Phase 0 — Foundations.** Monorepo; Compose (app + postgres) on the agentdock network;
 migrations; identity tables; AuthKit OAuth + protected-resource metadata; PAT creation via
-CLI script; `whoami`; Tailscale Funnel; `packages/reasoning` skeleton with the Crusoe
+CLI script; `whoami`; public HTTPS hosting (now Vultr); `packages/reasoning` skeleton with the Crusoe
 provider, `fake` provider and `reasoning_calls` logging.
 ✅ `docker compose up` works from a clean checkout. ✅ `npm run reasoning:ping` gets a
 schema-valid response from the configured Crusoe model and logs a `reasoning_calls` row. ✅ Claude Code calls `whoami` with a
 PAT. ✅ An agentdock worker calls `whoami` with a PAT. ✅ claude.ai custom connector
-completes OAuth via the Funnel URL and `whoami` works from the phone.
+completes OAuth via the public URL and `whoami` works from the phone.
 
 **Phase 1 — Receipt slice.** Foods, lots, observations, proposals, changes, idempotency;
 `submit_observation(receipt)`, `resolve_proposal`, `undo`, `get_household_summary`,
@@ -492,7 +492,7 @@ output against `expected-text.json` for the purchase lines, not the coupon or no
 The eval script reports accuracy per model.
 ✅ With `REASONING_PROVIDER=fallback` or Crusoe unreachable, the same receipt still yields a
 proposal: lower confidence, and the response says the fallback was used.
-✅ The review page shows an estimated expiry with its confidence and basis naming the Crusoe model.
+✅ Each estimated expiry records its confidence and a basis naming the Crusoe model, available to agents through `get_item` and the API. The review cards use plain language ("Good until about Saturday") without model text (product decision, 2026-09-29).
 The item's evidence trail links to the reasoning call.
 ✅ The recaptured fixture receipt is detected as a duplicate of the clean one.
 ✅ Edit one line, reject one, apply → inventory shows lots with estimated expiries labeled "est."
@@ -543,8 +543,8 @@ and review views. (Identity model already supports it.)
 
 ## 11. Risks, open questions and stretch goals
 
-- **Mac availability:** the Funnel URL is down when the Mac sleeps. Mitigation: run the same
-  Compose stack on a Crusoe Cloud VM (stretch goal).
+- **Hosting availability:** resolved by the Vultr deployment (always on, continuous deployment
+  with pre-migration backups). Remaining risk: a single VM with on-host backups only.
 - **Receipt transcription quality** still depends on the client's vision. Server-side
   canonicalization makes interpretation consistent, but can't fix a misread line. Alias learning
   and the review step contain the damage. Measure match rates on real Costco receipts in Phase 1.

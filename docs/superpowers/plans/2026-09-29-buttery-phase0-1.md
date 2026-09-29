@@ -7669,6 +7669,8 @@ git commit -m "feat: self-serve sign-up, onboarding, household settings and agen
 
 ### Task 21: Container on the agentdock network, Tailscale Funnel, acceptance run
 
+> **Superseded (2026-09-29):** public hosting moved to the Vultr continuous deployment (PR #4, `docs/runbooks/deploy-vultr.md`). The container and agentdock steps below were done; the Tailscale Funnel steps no longer apply.
+
 **Files:**
 - Create: `Dockerfile`, `.dockerignore`, `docs/runbooks/connect-clients.md`
 - Modify: `docker-compose.yml` (the `app` service), `apps/server/package.json` (`start:prod`)
