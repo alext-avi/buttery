@@ -5,7 +5,7 @@ keeps. It's pulled from the Similarweb API for **June–August 2026**, worldwide
 raw data is in [`similarweb-2026-08.json`](similarweb-2026-08.json) and the script is
 [`scripts/similarweb-market.mjs`](../../scripts/similarweb-market.mjs).
 
-| Group | Site | Visits / month (Aug) | Avg. visit | Bounce |
+| Group | Site | Visits in Aug 2026 | Avg. visit (Jun–Aug mean) | Bounce (Jun–Aug mean) |
 |---|---|---|---|---|
 | Recipe demand | allrecipes.com | **75.6M** | 2m 37s | 62% |
 | Grocery | instacart.com | **48.1M** | 5m 06s | 43% |
