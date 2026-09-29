@@ -3,7 +3,9 @@ import { eq } from 'drizzle-orm';
 import { connections, memberships, users } from '../src/db/schema';
 import { provisionUser } from '../src/identity/provision';
 import { createPat, resolvePat } from '../src/identity/tokens';
-import { resetDb, testDb } from './helpers/db';
+import { sql } from 'drizzle-orm';
+import { createDb } from '../src/db/client';
+import { resetDb, TEST_DB_URL, testDb } from './helpers/db';
 
 describe('identity', () => {
   beforeEach(() => resetDb());
@@ -28,6 +30,16 @@ describe('identity', () => {
     expect(b.userId).toBe(a.userId);
     const [u] = await db.select().from(users).where(eq(users.id, a.userId));
     expect(u?.authSubject).toBe('user_9');
+  });
+
+  it('creates one user when the same new identity signs in concurrently', async () => {
+    const clients = Array.from({ length: 5 }, () => createDb(TEST_DB_URL));
+    await Promise.all(clients.map((c) => c.execute(sql`select 1`))); // open every connection first
+    const results = await Promise.all(clients.map((c) => provisionUser(c, { authSubject: 'user_race', email: 'race@example.com' })));
+    await Promise.all(clients.map((c) => c.$client.end()));
+    expect(new Set(results.map((r) => r.userId)).size).toBe(1);
+    expect(new Set(results.map((r) => r.householdId)).size).toBe(1);
+    expect(await db.select().from(users).where(eq(users.authSubject, 'user_race'))).toHaveLength(1);
   });
 
   it('creates and resolves a personal access token', async () => {
