@@ -25,6 +25,53 @@ export function lowerConfidence(c: Confidence): Confidence {
   return c === 'high' ? 'medium' : 'low';
 }
 
+// --- Output hygiene (before Zod) ---
+// Guided decoding tends to fill optional fields instead of omitting them: "" ids, `servings: 0`,
+// `recipe_id` on a "moved" activity, `size: 0` for an unknown size. These rules drop fields that
+// carry no information or don't apply to the activity kind. They are cleanup, not corrections,
+// so they record no violation.
+
+const COOKED_ONLY = ['recipe_id', 'servings'] as const;
+const LOCATION_KINDS = new Set(['moved', 'froze', 'thawed', 'bought']);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function dropEmpty(obj: Record<string, unknown>, keys: readonly string[]) {
+  for (const key of keys) {
+    const v = obj[key];
+    if (v === '' || v === null || (typeof v === 'number' && v <= 0)) delete obj[key];
+  }
+}
+
+export function normalizeParseActivity(json: unknown): unknown {
+  if (!isRecord(json) || !Array.isArray(json.activities)) return json;
+  for (const activity of json.activities) {
+    if (!isRecord(activity)) continue;
+    dropEmpty(activity, COOKED_ONLY);
+    if (activity.kind !== 'cooked') for (const key of COOKED_ONLY) delete activity[key];
+    if (!Array.isArray(activity.items)) continue;
+    for (const item of activity.items) {
+      if (!isRecord(item)) continue;
+      dropEmpty(item, ['lot_id', 'food_name', 'to_location']);
+      if (!LOCATION_KINDS.has(String(activity.kind))) delete item.to_location;
+      if (isRecord(item.quantity)) dropEmpty(item.quantity, ['amount', 'unit']);
+    }
+  }
+  return json;
+}
+
+export function normalizeCanonicalize(json: unknown): unknown {
+  if (!isRecord(json) || !Array.isArray(json.lines)) return json;
+  for (const line of json.lines) {
+    if (!isRecord(line) || !isRecord(line.package)) continue;
+    dropEmpty(line.package, ['count', 'size', 'unit']);
+    if (Object.keys(line.package).length === 0) delete line.package;
+  }
+  return json;
+}
+
 export function guardCanonicalize(
   input: z.output<typeof CanonicalizeInputSchema>,
   output: CanonicalizeOutput,
@@ -106,8 +153,11 @@ export function guardParseActivity(
   const lots = new Map(input.context.lots.map((l) => [l.lot_id, l]));
   const recipes = new Set(input.context.recipes.map((r) => r.recipe_id));
 
-  const activities = output.activities.map((activity) => {
-    const items = activity.items.map((item) => {
+  const activities = output.activities.map((raw) => {
+    // Guided decoding sometimes fills an optional id with "" instead of omitting it.
+    const activity = raw.recipe_id === '' ? withoutKey(raw, 'recipe_id') : raw;
+    const items = activity.items.map((rawItem) => {
+      const item = rawItem.lot_id === '' ? withoutKey(rawItem, 'lot_id') : rawItem;
       if (item.lot_id === undefined || lots.has(item.lot_id)) return item;
       violations.push(`parseActivity: dropped unknown lot_id "${item.lot_id}"`);
       const { lot_id: _dropped, ...rest } = item;
@@ -130,6 +180,11 @@ export function guardParseActivity(
   });
 
   return { output: { ...output, activities, ambiguities }, violations };
+}
+
+function withoutKey<T extends object>(value: T, key: keyof T): T {
+  const { [key]: _dropped, ...rest } = value;
+  return rest as T;
 }
 
 export function guardRankRecipes(

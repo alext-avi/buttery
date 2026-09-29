@@ -3,6 +3,8 @@ import {
   CanonicalizeOutputSchema,
   createFallbackProvider,
   createReasoningProvider,
+  DEFAULT_MODEL,
+  DEFAULT_MODELS,
   FOOD_CATEGORIES,
   FOOD_STATES,
   ParseActivityOutputSchema,
@@ -114,6 +116,18 @@ describe('configuration', () => {
     await crusoe.parseActivity({ text: 'x', now: 'y', context: {} });
     expect(r.call).toMatchObject({ provider: 'crusoe', model: 'fast/model' });
     expect(seen).toEqual(['https://example.test/v1/chat/completions fast/model', 'https://example.test/v1/chat/completions default/model']);
+  });
+
+  it('uses built-in per-function defaults when no model is configured', async () => {
+    vi.stubEnv('REASONING_MODEL', '');
+    vi.stubEnv('REASONING_MODEL_PARSE', '');
+    vi.stubEnv('REASONING_MODEL_SHELF_LIFE', '');
+    const offline = (async () => {
+      throw new TypeError('offline');
+    }) as unknown as typeof fetch;
+    const provider = createReasoningProvider({ provider: 'crusoe', apiKey: 'cr_test', fetch: offline });
+    expect((await provider.parseActivity({ text: 'x', now: 'y', context: {} })).call.model).toBe(DEFAULT_MODELS.parseActivity);
+    expect((await provider.estimateShelfLife({ food_name: 'eggs', states: ['sealed'] })).call.model).toBe(DEFAULT_MODEL);
   });
 
   it('rejects an unknown REASONING_PROVIDER', () => {

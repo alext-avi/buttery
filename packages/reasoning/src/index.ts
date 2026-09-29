@@ -7,6 +7,7 @@ export {
   configFromEnv,
   DEFAULT_CRUSOE_BASE_URL,
   DEFAULT_MODEL,
+  DEFAULT_MODELS,
   type FakeScript,
 } from './provider.ts';
 export { SHELF_LIFE_DEFAULTS, FOOD_CATEGORIES, FOOD_STATES, categoryDefaults } from './shelfLifeDefaults.ts';

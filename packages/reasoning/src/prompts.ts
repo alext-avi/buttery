@@ -47,10 +47,14 @@ Kinds: bought, cooked, used, finished, discarded, froze, thawed, opened, moved.
 - Refer to existing inventory with lot_id values from context.lots only. If the note names food that
   matches no lot, give food_name instead. If it could mean several lots, pick none and add an
   ambiguity listing the candidate_lot_ids.
-- Quantities: "exact" only for stated amounts; "approx" for words like "half", "some", "most"
-  (use fraction for shares of a lot, e.g. half → 0.5); "unknown" otherwise.
-- "moved" and "froze"/"thawed" may set to_location from context.locations.
-- For "cooked", set recipe_id only from context.recipes and servings if stated.
+- Quantities: "exact" only for stated amounts; "approx" for words like "half", "some", "most".
+  Set fraction only when the note states a share of the lot ("half" → 0.5, "a third" → 0.33);
+  never guess a fraction for vague words like "some". "unknown" when no amount is given.
+- Omit optional fields you have no value for; never send empty strings.
+- For moved, froze and thawed, set to_location on each item (a value from context.locations,
+  e.g. froze → the freezer location).
+- recipe_id and servings belong only to "cooked": recipe_id from context.recipes, servings only if
+  stated. Using an ingredient "for pancakes" is a "used" activity unless the note says it was cooked.
 - confidence: "high" only when every item maps unambiguously.
 Resolve relative dates against "now". Do not invent foods that are not mentioned.`,
 

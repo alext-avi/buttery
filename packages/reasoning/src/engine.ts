@@ -11,7 +11,15 @@ import {
   fallbackRankRecipes,
   fallbackShelfLife,
 } from './fallback.ts';
-import { guardCanonicalize, guardParseActivity, guardRankRecipes, guardShelfLife, type Guarded } from './guardrails.ts';
+import {
+  guardCanonicalize,
+  guardParseActivity,
+  guardRankRecipes,
+  guardShelfLife,
+  normalizeCanonicalize,
+  normalizeParseActivity,
+  type Guarded,
+} from './guardrails.ts';
 import { hashInput } from './hash.ts';
 import { redactDeep } from './privacy.ts';
 import { repairPrompt, systemPrompt, userPrompt } from './prompts.ts';
@@ -23,24 +31,64 @@ interface FunctionSpec {
   output: z.ZodType;
   fallback(input: any): unknown;
   guard(input: any, output: any): Guarded<unknown>;
+  /** Output hygiene applied to the model's JSON before validation. */
+  normalize?(json: unknown): unknown;
 }
 
 const SPECS: Record<ReasoningFunction, FunctionSpec> = {
-  canonicalizeItems: { ...FUNCTION_SCHEMAS.canonicalizeItems, fallback: fallbackCanonicalize, guard: guardCanonicalize },
+  canonicalizeItems: { ...FUNCTION_SCHEMAS.canonicalizeItems, fallback: fallbackCanonicalize, guard: guardCanonicalize, normalize: normalizeCanonicalize },
   estimateShelfLife: { ...FUNCTION_SCHEMAS.estimateShelfLife, fallback: fallbackShelfLife, guard: guardShelfLife },
-  parseActivity: { ...FUNCTION_SCHEMAS.parseActivity, fallback: fallbackParseActivity, guard: guardParseActivity },
+  parseActivity: { ...FUNCTION_SCHEMAS.parseActivity, fallback: fallbackParseActivity, guard: guardParseActivity, normalize: normalizeParseActivity },
   rankRecipes: { ...FUNCTION_SCHEMAS.rankRecipes, fallback: fallbackRankRecipes, guard: guardRankRecipes },
 };
 
 const JSON_SCHEMAS = Object.fromEntries(
   Object.entries(SPECS).map(([fn, spec]) => {
     const { $schema: _draft, ...schema } = z.toJSONSchema(spec.output, { io: 'output' }) as Record<string, unknown>;
-    return [fn, schema];
+    return [fn, stripNumericBounds(schema) as Record<string, unknown>];
   }),
 ) as Record<ReasoningFunction, Record<string, unknown>>;
 
-export function outputJsonSchema(fn: ReasoningFunction): Record<string, unknown> {
-  return JSON_SCHEMAS[fn];
+/**
+ * Crusoe's guided decoding mishandles numeric bounds: with `exclusiveMinimum: 0`, "1/2 GAL"
+ * decodes as `size: 0` instead of 0.5 (verified 2026-09-29). Bounds are removed from the schema
+ * sent to the model; Zod still enforces them, so a bad value goes through repair.
+ */
+function stripNumericBounds(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(stripNumericBounds);
+  if (!node || typeof node !== 'object') return node;
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(node)) {
+    if (['minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum'].includes(key)) continue;
+    out[key] = stripNumericBounds(value);
+  }
+  return out;
+}
+
+/**
+ * The JSON Schema sent to the model for one call. Guided decoding emits properties in schema
+ * order, so optional keys the model "passes" can never be written afterwards (verified: cooked
+ * rice with states [prepared, frozen] lost `frozen`). Shelf life therefore gets a per-call schema
+ * whose `per_state` has exactly the requested states, in request order, all required.
+ */
+export function outputJsonSchema(fn: ReasoningFunction, input?: unknown): Record<string, unknown> {
+  const base = JSON_SCHEMAS[fn];
+  if (fn !== 'estimateShelfLife' || !input) return base;
+  const states = (input as { states: string[] }).states;
+  const properties = base.properties as Record<string, any>;
+  const perState = properties.per_state;
+  const estimate = Object.values(perState.properties as Record<string, unknown>)[0];
+  return {
+    ...base,
+    properties: {
+      ...properties,
+      per_state: {
+        ...perState,
+        properties: Object.fromEntries(states.map((state) => [state, estimate])),
+        required: states,
+      },
+    },
+  };
 }
 
 export const DEFAULT_TIMEOUTS_MS: Record<ReasoningFunction, number> = {
@@ -157,14 +205,14 @@ export async function runReasoning<T>(
   try {
     for (const attempt of ['model', 'repair'] as const) {
       const response = await abortable(
-        opts.completer.complete({ fn, model, messages, jsonSchema: JSON_SCHEMAS[fn], signal: controller.signal }),
+        opts.completer.complete({ fn, model, messages, jsonSchema: outputJsonSchema(fn, input), signal: controller.signal }),
         controller.signal,
       );
       addTokens(response.tokensIn, response.tokensOut);
 
-      const errors = validate(spec.output, response.content);
-      if (errors === null) {
-        const parsed = spec.output.parse(parseJson(response.content));
+      const checked = validate(spec, response.content);
+      if (checked.ok) {
+        const parsed = checked.data;
         const guarded = spec.guard(input, parsed);
         if (cache) await cache.set(key, { output: guarded.output, violations: guarded.violations } satisfies CachedEntry);
         return {
@@ -175,9 +223,9 @@ export async function runReasoning<T>(
         };
       }
       if (attempt === 'repair') {
-        return fallback(`invalid output after repair: ${errors}`, { tokensIn, tokensOut });
+        return fallback(`invalid output after repair: ${checked.errors}`, { tokensIn, tokensOut });
       }
-      messages.push({ role: 'assistant', content: response.content }, { role: 'user', content: repairPrompt(errors) });
+      messages.push({ role: 'assistant', content: response.content }, { role: 'user', content: repairPrompt(checked.errors) });
     }
     throw new Error('unreachable');
   } catch (error) {
@@ -216,16 +264,16 @@ export function parseJson(content: string): unknown {
   return JSON.parse(fenced ? fenced[1]! : trimmed);
 }
 
-/** `null` when valid, otherwise a compact error summary for the repair prompt. */
-function validate(schema: z.ZodType, content: string): string | null {
+/** Parse, normalize and validate model text; on failure, a compact summary for the repair prompt. */
+function validate(spec: FunctionSpec, content: string): { ok: true; data: unknown } | { ok: false; errors: string } {
   let json: unknown;
   try {
     json = parseJson(content);
   } catch (error) {
-    return `response is not valid JSON (${errorMessage(error)})`;
+    return { ok: false, errors: `response is not valid JSON (${errorMessage(error)})` };
   }
-  const result = schema.safeParse(json);
-  return result.success ? null : z.prettifyError(result.error);
+  const result = spec.output.safeParse(spec.normalize ? spec.normalize(json) : json);
+  return result.success ? { ok: true, data: result.data } : { ok: false, errors: z.prettifyError(result.error) };
 }
 
 function errorMessage(error: unknown): string {

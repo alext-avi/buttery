@@ -64,6 +64,7 @@ function packageScore(row: ExpectedRow, actual: CanonicalizeOutput['lines'][numb
 }
 
 const provider = createReasoningProvider(values.model ? { model: values.model } : {});
+// Lines from a receipt that fell back are reported but not scored: they measure the fallback.
 type Score = { field: string; ok: boolean };
 const scores: Score[] = [];
 const rows: string[] = [];
@@ -82,8 +83,9 @@ for (const [receiptKey, receipt] of Object.entries(fixture.receipts)) {
   receipt.rows.forEach((row, i) => {
     const out = result.output.lines.find((l) => l.line_id === `${receiptKey}-${i}`)!;
     const marks: string[] = [];
+    const scored = result.path !== 'fallback';
     const push = (field: string, ok: boolean, detail: string) => {
-      scores.push({ field, ok });
+      if (scored) scores.push({ field, ok });
       marks.push(`${ok ? '✓' : '✗'} ${field}=${detail}`);
     };
 
@@ -92,13 +94,13 @@ for (const [receiptKey, receipt] of Object.entries(fixture.receipts)) {
     if (row.item) {
       const s = nameScore(row.item, out.canonical_name);
       push('canonical_name', s.strict, `"${out.canonical_name}"`);
-      scores.push({ field: 'canonical_name_lenient', ok: s.lenient });
+      if (scored) scores.push({ field: 'canonical_name_lenient', ok: s.lenient });
     }
     if (nameKey && EXPECTED_CATEGORY[nameKey.toLowerCase()]) {
       push('category', EXPECTED_CATEGORY[nameKey.toLowerCase()]!.includes(out.category), out.category);
     }
     if (row.package_size) push('package', packageScore(row, out.package), JSON.stringify(out.package ?? null));
-    rows.push(`  ${row.raw.padEnd(24)} ${marks.join('  ')}`);
+    rows.push(`  ${row.raw.padEnd(24)} ${scored ? '' : '(fallback, not scored) '}${marks.join('  ')}`);
   });
 }
 
@@ -112,17 +114,19 @@ const summary = Object.fromEntries(
 const scored = scores.filter((s) => s.field !== 'canonical_name_lenient');
 const overall = { correct: scored.filter((s) => s.ok).length, total: scored.length };
 
+const pct = (correct: number, total: number) => (total === 0 ? 'n/a' : `${((100 * correct) / total).toFixed(0)}%`);
+
 console.log(`model: ${model ?? '(fallback)'}`);
 console.log(rows.join('\n'));
 console.log('\naccuracy');
 for (const [field, { correct, total }] of Object.entries(summary)) {
-  console.log(`  ${field.padEnd(24)} ${correct}/${total}  ${((100 * correct) / total).toFixed(0)}%`);
+  console.log(`  ${field.padEnd(24)} ${correct}/${total}  ${pct(correct, total)}`);
 }
-console.log(`  ${'overall'.padEnd(24)} ${overall.correct}/${overall.total}  ${((100 * overall.correct) / overall.total).toFixed(0)}%`);
+console.log(`  ${'overall'.padEnd(24)} ${overall.correct}/${overall.total}  ${pct(overall.correct, overall.total)}`);
 console.log(`  total latency            ${totalLatency} ms`);
 if (values.json) console.log(JSON.stringify({ model, summary, overall, totalLatency, fellBack }));
 
 if (fellBack) {
-  console.error('\nnote: at least one receipt used the fallback path; scores above are not model accuracy');
+  console.error('\nnote: at least one receipt used the fallback path; its lines are excluded from the scores');
   process.exitCode = 1;
 }

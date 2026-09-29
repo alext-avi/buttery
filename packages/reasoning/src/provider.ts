@@ -10,7 +10,17 @@ import type {
 import type { ReasoningConfig, ReasoningFunction, ReasoningProvider } from './types.ts';
 
 export const DEFAULT_CRUSOE_BASE_URL = 'https://api.inference.crusoecloud.com/v1';
-export const DEFAULT_MODEL = 'openai/gpt-oss-120b';
+export const DEFAULT_MODEL = 'deepseek-ai/Deepseek-V4-Flash';
+
+/**
+ * Built-in per-function defaults (see README "Live results"). Precedence for each function:
+ * per-function config/env → `REASONING_MODEL` → this table → `DEFAULT_MODEL`.
+ * parseActivity uses the Pro model because its confidence drives auto-apply (spec Section 7) and
+ * Flash missed lot ids and invented fractions in live tests; Pro is about as fast (~1 s).
+ */
+export const DEFAULT_MODELS: Partial<Record<ReasoningFunction, string>> = {
+  parseActivity: 'deepseek-ai/DeepSeek-V4-Pro',
+};
 
 const MODEL_ENV: Record<ReasoningFunction, string> = {
   canonicalizeItems: 'REASONING_MODEL_CANONICALIZE',
@@ -73,7 +83,7 @@ export function createReasoningProvider(config?: ReasoningConfig): ReasoningProv
   return bind({
     provider: 'crusoe',
     completer,
-    modelFor: (fn) => merged.models?.[fn] ?? merged.model ?? DEFAULT_MODEL,
+    modelFor: (fn) => merged.models?.[fn] ?? merged.model ?? DEFAULT_MODELS[fn] ?? DEFAULT_MODEL,
     timeoutFor,
     defaultCache: merged.cache ?? createMemoryCache(),
     now,

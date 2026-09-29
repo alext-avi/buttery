@@ -69,6 +69,8 @@ describe('structured output and repair', () => {
     expect(req!.body.model).toBe('test/model');
     expect(req!.body.response_format.type).toBe('json_schema');
     expect(req!.body.response_format.json_schema.schema.properties.lines).toBeDefined();
+    // Numeric bounds break Crusoe's guided decoding (0.5 decodes as 0); Zod enforces them instead.
+    expect(JSON.stringify(req!.body.response_format.json_schema.schema)).not.toMatch(/minimum|maximum/i);
   });
 
   it('repairs invalid JSON once, sending the validation errors back', async () => {
@@ -155,8 +157,8 @@ describe('constrained choices', () => {
               { lot_id: 'lot_chicken', food_name: 'chicken', to_location: 'freezer' },
               { lot_id: 'lot_ghost', food_name: 'ground beef' },
             ],
-            recipe_id: 'recipe_ghost',
           },
+          { kind: 'cooked', items: [], recipe_id: 'recipe_ghost' },
         ],
         ambiguities: [{ text: 'the beef', reason: 'two lots', candidate_lot_ids: ['lot_chicken', 'lot_ghost'] }],
         confidence: 'medium',
@@ -172,10 +174,10 @@ describe('constrained choices', () => {
       },
     });
 
-    const [activity] = result.output.activities;
+    const [activity, cooked] = result.output.activities;
     expect(activity!.items[0]).toEqual({ lot_id: 'lot_chicken', food_name: 'chicken', to_location: 'freezer' });
     expect(activity!.items[1]).toEqual({ food_name: 'ground beef' });
-    expect(activity!.recipe_id).toBeUndefined();
+    expect(cooked).toEqual({ kind: 'cooked', items: [] });
     expect(result.output.ambiguities[0]!.candidate_lot_ids).toEqual(['lot_chicken']);
     expect(result.violations).toHaveLength(3);
     expect(ParseActivityOutputSchema.parse(result.output)).toEqual(result.output);
@@ -338,5 +340,66 @@ describe('privacy and input validation', () => {
     const { provider, requests } = crusoe([]);
     await expect(provider.estimateShelfLife({ food_name: '', states: [] })).rejects.toBeInstanceOf(ReasoningInputError);
     expect(requests).toHaveLength(0);
+  });
+});
+
+describe('model-facing schema', () => {
+  it('shelf life: per_state lists exactly the requested states, in request order, all required', async () => {
+    const { provider, requests } = crusoe([
+      json({ per_state: { prepared: { days: 4, confidence: 'high' }, frozen: { days: 180, confidence: 'medium' } }, rationale: 'r' }),
+    ]);
+    const result = await provider.estimateShelfLife({ food_name: 'cooked rice', category: 'grains_pasta', states: ['prepared', 'frozen'] });
+    const perState = requests[0]!.body.response_format.json_schema.schema.properties.per_state;
+    expect(Object.keys(perState.properties)).toEqual(['prepared', 'frozen']);
+    expect(perState.required).toEqual(['prepared', 'frozen']);
+    expect(result.violations).toEqual([]);
+  });
+
+  it('parseActivity: empty-string ids are treated as absent, without a violation', async () => {
+    const { provider } = crusoe([
+      json({ activities: [{ kind: 'used', items: [{ lot_id: '', food_name: 'milk' }], recipe_id: '' }], ambiguities: [], confidence: 'medium' }),
+    ]);
+    const result = await provider.parseActivity({ text: 'used some milk', now: '2026-09-29', context: {} });
+    expect(result.output.activities[0]).toEqual({ kind: 'used', items: [{ food_name: 'milk' }] });
+    expect(result.violations).toEqual([]);
+  });
+});
+
+describe('output hygiene', () => {
+  it('drops fields that do not apply to the activity kind and zero-valued numbers, without violations', async () => {
+    const { provider } = crusoe([
+      json({
+        activities: [
+          { kind: 'moved', items: [{ lot_id: 'lot_a', to_location: 'freezer' }], recipe_id: 'r1', servings: 2 },
+          { kind: 'used', items: [{ lot_id: 'lot_a', to_location: 'fridge', quantity: { kind: 'approx', amount: 0 } }], servings: 0 },
+          { kind: 'cooked', items: [], recipe_id: 'r1', servings: 0 },
+        ],
+        ambiguities: [],
+        confidence: 'high',
+      }),
+    ]);
+    const result = await provider.parseActivity({
+      text: 'moved it, used some, cooked r1',
+      now: '2026-09-29',
+      context: {
+        lots: [{ lot_id: 'lot_a', food_name: 'chicken', location: 'fridge', state: 'sealed', quantity_text: '1 lb' }],
+        recipes: [{ recipe_id: 'r1', title: 'Soup' }],
+      },
+    });
+    expect(result.path).toBe('model');
+    expect(result.output.activities).toEqual([
+      { kind: 'moved', items: [{ lot_id: 'lot_a', to_location: 'freezer' }] },
+      { kind: 'used', items: [{ lot_id: 'lot_a', quantity: { kind: 'approx' } }] },
+      { kind: 'cooked', items: [], recipe_id: 'r1' },
+    ]);
+    expect(result.violations).toEqual([]);
+  });
+
+  it('drops zero package fields in canonicalize instead of failing validation', async () => {
+    const out = milkOut();
+    const { provider } = crusoe([json({ lines: [{ ...out.lines[0], package: { count: 0, size: 0 } }] })]);
+    const result = await provider.canonicalizeItems({ lines: [milkLine], candidates: milkCandidates });
+    expect(result.path).toBe('model');
+    expect(result.output.lines[0]!.package).toBeUndefined();
   });
 });
