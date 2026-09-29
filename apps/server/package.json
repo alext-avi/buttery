@@ -26,6 +26,7 @@
     "hono": "^4.13.11",
     "postgres": "^3.4.9",
     "zod": "^4.6.5",
-    "@buttery/domain": "*"
+    "@buttery/domain": "*",
+    "@buttery/reasoning": "*"
   }
 }

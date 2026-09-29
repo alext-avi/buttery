@@ -188,3 +188,9 @@ export type ProposalRow = typeof proposals.$inferSelect;
 export type ProposalOpRow = typeof proposalOps.$inferSelect;
 export type ChangeSetRow = typeof changeSets.$inferSelect;
 export type ChangeRow = typeof changes.$inferSelect;
+
+export const reasoningCache = pgTable('reasoning_cache', {
+  key: text('key').primaryKey(),
+  value: jsonb('value').notNull(),
+  createdAt: ts('created_at').notNull().defaultNow(),
+});

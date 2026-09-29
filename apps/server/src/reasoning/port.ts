@@ -62,7 +62,8 @@ export type ReasoningResult<T> = {
   violations: string[];
 };
 
-export type ReasoningContext = { householdId?: string };
+export type ReasoningCache = { get(key: string): Promise<unknown | undefined>; set(key: string, value: unknown): Promise<void> };
+export type ReasoningContext = { householdId?: string; cache?: ReasoningCache };
 
 export interface ReasoningPort {
   canonicalizeItems(input: CanonicalizeInput, ctx?: ReasoningContext): Promise<ReasoningResult<CanonicalizeOutput>>;
