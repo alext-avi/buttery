@@ -28,6 +28,8 @@ export function Review() {
     applyKey.current = newKey();
   };
   const open = data.ops.filter((o) => !o.applied);
+  // Skipped lines stay re-addable, but only undecided lines (or a changed choice) need the action bar.
+  const hasWork = open.some((o) => o.decision === 'pending') || Object.keys(choices).length > 0;
   const lotOps = data.ops.filter((o) => o.op === 'add_lot');
   // Follow the verdict: every open line that isn't high confidence needs a look, low confidence first.
   const toCheck = new Set((data.lines_to_check ?? []).map((l) => l.op_id));
@@ -197,7 +199,7 @@ export function Review() {
         </section>
       )}
 
-      {open.length > 0 && (
+      {hasWork && (
         <div className="action-bar">
           <div className="action-bar-inner">
             <span>{openLots > 0 ? `${adding} of ${openLots} item${openLots === 1 ? '' : 's'} will be added` : 'Nothing new to add'}</span>

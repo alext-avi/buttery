@@ -39,6 +39,8 @@ test.describe.serial('receipt review on a phone', () => {
 
     await page.getByRole('button', { name: 'Add 5 items' }).click();
     await expect(page.getByRole('status')).toContainText('Added 5 items');
+    // Nothing is left to decide, so the action bar goes away (the skipped line stays skipped).
+    await expect(page.locator('.action-bar')).toHaveCount(0);
     await expect(yogurt).toContainText('freezer');
     await expect(yogurt).toContainText('2 × 32 oz');
     await expect(yogurt.getByText('Added')).toBeVisible();

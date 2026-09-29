@@ -38,7 +38,7 @@ The successful run kept per-call approvals enabled. API callback wiring issues w
 
 1. Start with the primary agent and ask it to recover the current household state through MCP.
 2. Show a receipt image and ask the primary agent to extract the visible lines, preserve package sizes, flag uncertainty, and submit a receipt observation. This live image step still needs a presenter rehearsal with the chosen Claude/Codex client.
-3. Open the returned review link on a phone-sized view. Correct one location, skip an item, and apply.
+3. Open the returned review link on a phone-sized view. Point out the verdict at the top ("Looks right", "Mostly confident" or "Needs a review"): it comes from Crusoe's per-line confidence plus Buttery's own checks, and on `safe_to_apply` the agent would simply have asked for a yes in chat. Correct one location, skip an item, and apply.
 4. Start a fresh agent conversation. Ask what is on hand, where it is, and which dates are printed versus estimated.
 5. Submit the receipt again. Show that inventory does not grow.
 6. Undo the receipt import. Show the inventory and retained history agree.
