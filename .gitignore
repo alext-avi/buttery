@@ -7,3 +7,5 @@ dist/
 !.env.example
 .claude/settings.local.json
 .superpowers/
+.local/
+apps/server/.e2e/

@@ -8,6 +8,7 @@ import type { ReasoningPort } from '../reasoning/port';
 import { apiRoutes } from './apiRoutes';
 import { authRoutes } from './authRoutes';
 import { mcpRoutes } from './mcpRoute';
+import { mountWeb } from './web';
 import { wellKnownRoutes } from './wellKnown';
 
 export type AppDeps = {
@@ -29,5 +30,6 @@ export function createApp(deps: AppDeps) {
   app.route('/mcp', mcpRoutes(deps));
   app.route('/auth', authRoutes(deps));
   app.route('/api', apiRoutes(deps));
+  mountWeb(app, deps.config);
   return app;
 }
