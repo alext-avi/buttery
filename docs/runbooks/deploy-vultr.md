@@ -27,7 +27,7 @@ Set `DEMO_PUBLIC_BASE_URL` in the host env file to the exact HTTPS origin. Use a
 | Demo URL | `https://140-82-48-162.sslip.io` (`DEMO_URL`). [sslip.io](https://sslip.io) resolves the name to the VM's IP, so Let's Encrypt works without a domain. |
 | VM | Vultr `buttery-demo`: `vc2-2c-4gb` (2 vCPU, 4 GB, AMD64), Silicon Valley (`sjc`), Ubuntu 24.04, `140.82.48.162`. About $0.027/hr. |
 | Deploy user | `buttery` (member of `docker`), owning `/opt/buttery`. `authorized_keys` holds only the CI public key, with the `restrict` option (no forwarding, no PTY). |
-| Env file | `/opt/buttery/.env.demo`, mode 600, owner `buttery`. Separate random `DEMO_DB_PASSWORD` and `DEMO_SESSION_SECRET` generated on the host, `REASONING_PROVIDER=crusoe` with the demo's Crusoe key, `SIGNUP_MODE=closed`. |
+| Env file | `/opt/buttery/.env.demo`, mode 600, owner `buttery`. Separate random `DEMO_DB_PASSWORD` and `DEMO_SESSION_SECRET` generated on the host, `REASONING_PROVIDER=crusoe` with the demo's Crusoe key, `SIGNUP_MODE=open` (was `closed` until AuthKit was configured). |
 | Ingress | Caddy in `/opt/ingress` (Compose project `buttery-ingress`, from `deploy/vultr/ingress.compose.yaml` and `deploy/vultr/Caddyfile`). It uses host networking, forwards to `127.0.0.1:8793`, never buffers (`flush_interval -1`) and allows 10-minute reads for streaming MCP. It's managed outside the deployment workflow. |
 | Host firewall (UFW) | Vultr's Ubuntu image enables UFW with only SSH allowed. Because Caddy uses host networking (unlike Docker-published ports, which bypass UFW), 80/tcp, 443/tcp and 443/udp are allowed explicitly: `ufw allow 80/tcp && ufw allow 443/tcp && ufw allow 443/udp`. Without this, Let's Encrypt validation and all HTTPS traffic time out. |
 | Firewall group | `buttery-demo`: 80/443 open; 22 open to all, because GitHub-hosted runners have no fixed source IP. SSH accepts keys only: password and keyboard-interactive auth are disabled in `/etc/ssh/sshd_config.d/00-buttery.conf`. |
@@ -43,11 +43,22 @@ ssh root@<host> 'printf "DEMO_HOST=<ip-with-dashes>.sslip.io\nDEMO_UPSTREAM=127.
   cd /opt/ingress && docker compose --env-file .env -f compose.yaml up -d'
 ```
 
-Presenter tokens: sign-up is closed, so create one on the host:
+**AuthKit (configured 2026-09-29):** WorkOS staging environment `interested-majestic-71-staging.authkit.app`.
+- **Dashboard settings:** CIMD and DCR are enabled (Connect → Configuration). The Resource Indicator is `https://140-82-48-162.sslip.io/mcp`. The default redirect is `https://140-82-48-162.sslip.io/auth/callback` (Applications → Redirects).
+- **`.env.demo` on the host:** `AUTHKIT_DOMAIN`, `AUTHKIT_ISSUER`, `AUTHKIT_AUDIENCE` (the MCP resource URL), `WORKOS_CLIENT_ID` and `WORKOS_API_KEY`.
+- **Sign-up:** `SIGNUP_MODE=open`, so anyone can sign up and get their own household. Receipts they submit use the demo's Crusoe credits.
+
+To change host env settings, edit `/opt/buttery/.env.demo`, then re-promote the running image. That keeps the backup and health gate:
 
 ```sh
-ssh root@<host> 'sudo -u buttery docker compose --project-name buttery-demo --env-file /opt/buttery/.env.demo \
-  -f /opt/buttery/deploy/demo/compose.yaml exec -T app npm run token:create -- --email you@example.com --client "Claude Code"'
+ssh root@<host> 'cd /opt/buttery && sudo -u buttery bash scripts/promote-demo.sh \
+  "$(python3 -c "import json;print(json.load(open(\".local/demo-releases/latest.json\"))[\"image\"])")" /opt/buttery/.env.demo'
+```
+
+Personal access tokens for CLIs:
+
+```sh
+ssh root@<host> 'docker exec buttery-demo-app-1 npm run -s token:create -- --email you@example.com --client "Claude Code"'
 ```
 
 **Teardown after the event:** delete the Vultr instance `buttery-demo` (download a backup from
