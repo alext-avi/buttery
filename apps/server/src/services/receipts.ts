@@ -32,6 +32,7 @@ import { countOps, defaultLocationFor, type IgnoreDraft, type LineSnapshot, type
 import { loadCatalog, toCandidate } from './foods';
 import { findIdempotent, runIdempotent } from './idempotency';
 import { makeLinks } from './links';
+import { verdictFor, verdictNext, type LineToCheck } from './verdict';
 
 export const SubmitReceiptInputSchema = z.object({
   kind: z.literal('receipt'),
@@ -49,6 +50,8 @@ export type SubmitReceiptResult = {
   possible_duplicate_of: string | null;
   counts: ReturnType<typeof countOps>;
   reasoning: { canonicalize: string | null; shelf_life: string[]; fallback_used: boolean };
+  verdict: ReturnType<typeof verdictFor>['verdict'];
+  lines_to_check: LineToCheck[];
   auto_applied: never[];
   uncertainties: string[];
   next: string[];
@@ -88,7 +91,9 @@ async function findObservation(db: Executor, householdId: string, field: 'finger
 
 async function duplicateResult(db: Executor, observationId: string, links: ReturnType<typeof makeLinks>): Promise<SubmitReceiptResult> {
   const [proposal] = await db.select().from(proposals).where(eq(proposals.observationId, observationId)).limit(1);
-  const ops = await db.select().from(proposalOps).where(eq(proposalOps.proposalId, proposal!.id));
+  const ops = await db.select().from(proposalOps).where(eq(proposalOps.proposalId, proposal!.id)).orderBy(proposalOps.seq);
+  const [obs] = await db.select().from(observations).where(eq(observations.id, observationId));
+  const { verdict, lines_to_check } = verdictFor(ops, obs!);
   return {
     observation_id: observationId,
     proposal_id: proposal!.id,
@@ -97,6 +102,8 @@ async function duplicateResult(db: Executor, observationId: string, links: Retur
     possible_duplicate_of: null,
     counts: countOps(ops),
     reasoning: { canonicalize: null, shelf_life: [], fallback_used: false },
+    verdict,
+    lines_to_check,
     auto_applied: [],
     uncertainties: [],
     next: ['This receipt was already recorded; nothing new was created. Share the existing review link.'],
@@ -325,6 +332,7 @@ export async function submitReceipt(deps: Deps, p: Principal, input: SubmitRecei
         nearKey,
         possibleDuplicateOf: near?.id ?? null,
         uncertainties,
+        reasoningFallback: fallbackUsed,
       })
       .onConflictDoNothing()
       .returning({ id: observations.id });
@@ -334,8 +342,13 @@ export async function submitReceipt(deps: Deps, p: Principal, input: SubmitRecei
     }
     for (const c of calls) await persistReasoningCall(tx, p.householdId, c.id, c.result);
     const [proposal] = await tx.insert(proposals).values({ householdId: p.householdId, observationId }).returning();
-    await tx.insert(proposalOps).values(ops.map((o) => ({ ...o, householdId: p.householdId, proposalId: proposal!.id })));
+    const insertedOps = await tx
+      .insert(proposalOps)
+      .values(ops.map((o) => ({ ...o, householdId: p.householdId, proposalId: proposal!.id })))
+      .returning();
+    insertedOps.sort((a, b) => a.seq - b.seq);
     const reviewUrl = links.review(proposal!.id);
+    const { verdict, lines_to_check } = verdictFor(insertedOps, { possibleDuplicateOf: near?.id ?? null, reasoningFallback: fallbackUsed });
     return {
       observation_id: observationId,
       proposal_id: proposal!.id,
@@ -344,9 +357,11 @@ export async function submitReceipt(deps: Deps, p: Principal, input: SubmitRecei
       possible_duplicate_of: near?.id ?? null,
       counts,
       reasoning: { canonicalize: canonPath, shelf_life: shelfPaths, fallback_used: fallbackUsed },
+      verdict,
+      lines_to_check,
       auto_applied: [],
       uncertainties,
-      next: [`Nothing has been added to inventory yet. Give the user this review link: ${reviewUrl}`],
+      next: ['Nothing has been added to inventory yet.', ...verdictNext(verdict, reviewUrl, lines_to_check.length)],
     };
   });
 }

@@ -1,0 +1,1 @@
+ALTER TABLE "observations" ADD COLUMN "reasoning_fallback" boolean DEFAULT false NOT NULL;

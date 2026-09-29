@@ -11,6 +11,7 @@ import { getHousehold } from './identity';
 import { makeLinks } from './links';
 import { receiptLabel } from './proposals';
 import { compactLot, toLotView, type LotView } from './views';
+import { verdictFor } from './verdict';
 
 type Deps = Pick<AppDeps, 'db' | 'config'>;
 export const STALE_AFTER_DAYS = 7;
@@ -67,7 +68,7 @@ export async function getHouseholdSummary(deps: Deps, p: Principal, now = new Da
   const noEstimate = views.filter((v) => v.food.perishability === 'perishable' && !v.expires).length;
 
   const open = await db
-    .select({ proposal: proposals, payload: observations.payload })
+    .select({ proposal: proposals, payload: observations.payload, observation: observations })
     .from(proposals)
     .innerJoin(observations, eq(observations.id, proposals.observationId))
     .where(and(eq(proposals.householdId, p.householdId), inArray(proposals.status, ['pending', 'partial'])))
@@ -88,6 +89,7 @@ export async function getHouseholdSummary(deps: Deps, p: Principal, now = new Da
       status: o.proposal.status,
       created_at: o.proposal.createdAt.toISOString(),
       open_lines: openOps.filter((x) => x.proposalId === o.proposal.id && x.decision === 'pending' && !x.appliedAt).length,
+      verdict: verdictFor(openOps.filter((x) => x.proposalId === o.proposal.id), o.observation).verdict?.verdict ?? null,
       review_url: links.review(o.proposal.id),
     })),
     recent_changes: await recentChanges(db, p.householdId, 5),

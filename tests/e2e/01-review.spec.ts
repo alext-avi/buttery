@@ -10,6 +10,8 @@ test.describe.serial('receipt review on a phone', () => {
     await page.getByRole('button', { name: 'Sign in' }).click();
     await expect(page.getByRole('heading', { name: 'PANTRY CLUB' })).toBeVisible();
     await expect(page.getByText('GRK YOGURT 2X32 OZ')).toBeVisible();
+    // The verdict tells the user how much attention this receipt needs.
+    await expect(page.getByTestId('verdict')).toContainText('worth a glance');
     await expect(page.getByText('shared by Alex via Claude iOS')).toBeVisible();
     // Estimated expiry shows its basis, naming the model that produced it.
     await expect(page.getByTestId('op').filter({ hasText: 'CHKN BREAST 3 LB' })).toContainText('model_estimate, fake-1, medium');

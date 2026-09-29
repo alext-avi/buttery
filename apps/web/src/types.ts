@@ -45,7 +45,14 @@ export type ProposalView = {
   };
   ops: OpView[];
   counts: { lines: number; items: number; pending: number; applied: number; low_confidence: number };
+  verdict: Verdict | null;
   links: { review: string; inventory: string };
+};
+
+export type Verdict = {
+  verdict: 'safe_to_apply' | 'quick_check' | 'needs_review';
+  reasons: string[];
+  counts: { items: number; high: number; medium: number; low: number };
 };
 
 export type ResolveResponse = ProposalView & { applied_change_set_id: string | null; created_lot_ids: string[]; notes: string[] };

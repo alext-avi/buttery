@@ -6,6 +6,7 @@ test('a possible duplicate receipt warns and needs confirmation before applying'
   await page.goto(`/review/${state().dup_proposal_id}`);
   const warning = page.getByRole('alert').filter({ hasText: 'may already be recorded' });
   await expect(warning).toBeVisible();
+  await expect(page.getByTestId('verdict')).toContainText('Needs a review');
   await expect(warning.getByRole('link', { name: 'Open the earlier receipt' })).toBeVisible();
   const apply = page.getByRole('button', { name: /Add \d+ items?/ });
   await expect(apply).toBeDisabled();
