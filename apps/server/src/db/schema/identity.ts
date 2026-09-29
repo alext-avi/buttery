@@ -45,15 +45,22 @@ export const connections = pgTable('connections', {
   createdAt: ts('created_at').notNull().defaultNow(),
 });
 
-/** Short-lived sign-in codes minted by an agent connection. Only an HMAC of the code is stored. */
+/**
+ * One-time codes an agent attaches to a link. Opening the link grants a page pass for that one page (not a sign-in).
+ * Only an HMAC of the code is stored.
+ */
 export const loginCodes = pgTable('login_codes', {
   id: uuid('id').primaryKey().defaultRandom(),
   codeHash: text('code_hash').notNull().unique(),
+  /** The page the code opens, e.g. /review/<id>, and what it grants: a receipt, an item or the inventory. */
+  path: text('path').notNull(),
+  scopeKind: text('scope_kind', { enum: ['proposal', 'lot', 'inventory'] }).notNull(),
+  scopeId: uuid('scope_id'),
   householdId: uuid('household_id').notNull().references(() => households.id),
   userId: uuid('user_id').notNull().references(() => users.id),
   connectionId: uuid('connection_id').notNull().references(() => connections.id),
   uses: integer('uses').notNull().default(0),
-  maxUses: integer('max_uses').notNull().default(3),
+  maxUses: integer('max_uses').notNull().default(1),
   expiresAt: ts('expires_at').notNull(),
   createdAt: ts('created_at').notNull().defaultNow(),
 });

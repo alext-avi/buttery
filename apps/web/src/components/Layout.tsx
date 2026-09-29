@@ -1,6 +1,9 @@
-import { Link, NavLink, Outlet } from 'react-router';
+import { Link, NavLink, Outlet, useSearchParams } from 'react-router';
+import { OpenLink } from './OpenLink';
 
 export function Layout() {
+  const [params] = useSearchParams();
+  const code = params.get('login');
   return (
     <>
       <header className="topbar">
@@ -15,7 +18,7 @@ export function Layout() {
         </div>
       </header>
       <main>
-        <Outlet />
+        {code ? <OpenLink code={code} /> : <Outlet />}
       </main>
     </>
   );

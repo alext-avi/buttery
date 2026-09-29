@@ -6,7 +6,6 @@ export const state = () => JSON.parse(readFileSync('apps/server/.e2e/state.json'
     proposal_id: string;
     dup_proposal_id: string;
     link_code: string;
-    typed_code: string;
     expired_code: string;
   };
 

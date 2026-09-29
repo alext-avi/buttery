@@ -6,9 +6,8 @@ test.describe.serial('receipt review on a phone', () => {
     const { token, proposal_id } = state();
     await page.goto(`/review/${proposal_id}`);
     await expect(page).toHaveURL(/\/login\?next=/);
-    await page.getByText('Use a token instead').click();
     await page.getByLabel('Access token').fill(token);
-    await page.getByRole('button', { name: 'Sign in with token' }).click();
+    await page.getByRole('button', { name: 'Sign in' }).click();
     await expect(page.getByRole('heading', { name: 'PANTRY CLUB' })).toBeVisible();
     await expect(page.getByText('GRK YOGURT 2X32 OZ')).toBeVisible();
     // The verdict tells the user how much attention this receipt needs.

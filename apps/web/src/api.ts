@@ -31,7 +31,7 @@ export const newKey = () => crypto.randomUUID();
 export const api = {
   authConfig: () => request<{ authkit: boolean; signup: boolean }>('GET', '/auth/config'),
   tokenLogin: (token: string, next: string) => request<{ ok: true; next: string }>('POST', '/auth/token-login', { token, next }),
-  codeLogin: (code: string, next: string) => request<{ ok: true; next: string }>('POST', '/auth/code-login', { code, next }),
+  openLink: (code: string) => request<{ ok: true; next: string }>('POST', '/auth/open', { code }),
   proposal: (id: string) => request<ProposalView>('GET', `/api/proposals/${id}`),
   resolve: (id: string, body: { decisions: Decision[]; accept_remaining: boolean; apply: boolean; idempotency_key: string; confirm_possible_duplicate?: boolean }) =>
     request<ResolveResponse>('POST', `/api/proposals/${id}/resolve`, body),

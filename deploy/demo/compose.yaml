@@ -27,6 +27,8 @@ services:
       PUBLIC_BASE_URL: ${DEMO_PUBLIC_BASE_URL:?Set DEMO_PUBLIC_BASE_URL}
       SESSION_SECRET: ${DEMO_SESSION_SECRET:?Set DEMO_SESSION_SECRET}
       SIGNUP_MODE: ${SIGNUP_MODE:-closed}
+      # Caddy sits in front: read each visitor's real IP from X-Forwarded-For so rate limits are per visitor.
+      TRUST_PROXY: "true"
     ports:
       - "127.0.0.1:${DEMO_PORT:-8793}:8790"
     depends_on:

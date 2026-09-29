@@ -1,202 +1,158 @@
-# Agent-minted login codes
+# Page links from agents
 
-Implements [alext-avi/buttery#2](https://github.com/alext-avi/buttery/issues/2), with one change agreed on 2026-09-29: instead of the server
-rewriting every link in MCP responses into `/l/<code>?to=…`, the agent mints one code and appends it as a `login` URL parameter to any
-Buttery page link. The same code is what a person types on another device.
+Implements [alext-avi/buttery#2](https://github.com/alext-avi/buttery/issues/2), revised on 2026-09-29.
+
+Two decisions changed the ticket's design:
+
+- **Links are page passes, not sign-ins.** The ticket's links signed the browser in. Instead, a link from the agent opens the one page it
+  points at, for 24 hours, and nothing else. It never signs the browser in or changes an existing sign-in. Tapping Inventory from a
+  receipt link asks for a normal sign-in.
+- **Codes don't touch `/login`.** The ticket's typeable codes for another device are dropped, and `/login` is unchanged.
 
 ## Goal
 
-Nobody signs in to the web app by pasting a `btr_` token. The agent is already authenticated, so it vouches for the person: every link it
-hands over signs the browser in, and for another device it hands over a short code to type.
-
-Success looks like: tap a review link from Claude on a phone that has never used Buttery, and land on that review, signed in, with a clean
-URL.
+Someone can open the receipt, item or inventory page their assistant just linked, with one tap, without pasting a `btr_` token, and
+without that link granting anything beyond the page. Their sign-in and household are untouched.
 
 ## How it works
 
-1. The agent calls the MCP tool `get_login_code`. The server mints a code such as `Q7X4-KM9P` tied to the calling connection.
-2. The agent appends `login=Q7X4-KM9P` to every Buttery page link in that message (`?login=` or `&login=`).
-3. A browser opens `https://…/review/abc?login=Q7X4-KM9P`. Before the page is served, a middleware redeems the code, sets the normal
-   session cookie, strips the parameter and redirects to `https://…/review/abc`.
-4. On another device, the person opens `/login` and types the code into the code box.
+1. The agent calls `get_login_code` with a Buttery page URL, for example the `review_url` from `submit_observation`. The server mints a
+   one-time code for that page and returns the URL with `login=<code>` attached.
+2. The person taps the link. The web app shows a small screen reading "Open this receipt" with an **Open** button. A chat app's link
+   preview only loads this screen, so it can't spend the code.
+3. Tapping Open posts the code to `POST /auth/open`. The server spends it and sets a 24-hour **page pass** for that page only. The browser
+   then loads the clean URL.
+4. The page's own API calls work under the pass. Every other page and API call needs a normal sign-in, exactly as before.
 
-AuthKit sign-in, self-serve sign-up and token paste stay as fallbacks.
+If the browser can already see the page (it is signed in to that household, or already holds a pass for it), the `login` parameter is
+stripped and the page opens with no Open screen and no code spent.
+
+## Shareable pages and what a pass allows
+
+| Page | Pass kind | API calls the pass allows |
+|---|---|---|
+| `/review/<proposal>` | `proposal` | `GET /api/proposals/<id>`, `POST /api/proposals/<id>/resolve`, and undo of change sets caused by that proposal |
+| `/items/<lot>` | `lot` | `GET /api/items/<id>`, and undo of change sets that touched that lot |
+| `/inventory` (any filter) | `inventory` | `GET /api/inventory` |
+
+- **Pages that are never shareable.** `/settings`, `/login` and anything else are refused at minting. Settings holds tokens, so it always
+  needs a real sign-in.
+- **Household check at minting.** A review or item link must belong to the agent's household.
 
 ## Data model
 
-### `login_codes` (new table)
+### `login_codes`
 
 | Column | Type | Notes |
 |---|---|---|
 | `id` | uuid pk | |
-| `code_hash` | text unique not null | HMAC-SHA-256 of the normalized code, keyed by `SESSION_SECRET` |
-| `household_id` | uuid not null → households | |
-| `user_id` | uuid not null → users | |
-| `connection_id` | uuid not null → connections | The MCP connection that minted it |
-| `uses` | int not null default 0 | |
-| `max_uses` | int not null default 3 | |
-| `expires_at` | timestamptz not null | |
-| `created_at` | timestamptz not null default now() | |
+| `code_hash` | text unique | HMAC-SHA-256 of the normalized code, keyed by `SESSION_SECRET` |
+| `path` | text | The page the code opens, e.g. `/review/<id>` |
+| `scope_kind` | text | `proposal`, `lot` or `inventory` |
+| `scope_id` | uuid null | The proposal or lot id |
+| `household_id`, `user_id` | uuid | From the minting connection |
+| `connection_id` | uuid → connections | The MCP connection that minted it |
+| `uses` / `max_uses` | int | `max_uses` is 1: codes are one-time |
+| `expires_at` | timestamptz | Must be opened within `LOGIN_CODE_TTL_MINUTES` (default 10) |
 
-HMAC rather than plain SHA-256 because the code is short: a leaked table of plain hashes could be brute-forced offline. The ticket's
-"stored as hashes" still holds.
+- **Hashing.** HMAC rather than plain SHA-256, because an 8-character code is small enough to brute-force offline from a leaked table.
+- **Pruning.** Codes that expired more than a day ago are deleted whenever a new one is minted.
 
-### `connections.parent_connection_id` (new nullable column → connections)
+### `connections.parent_connection_id`
 
-A web connection created by redeeming a code, or by pasting a token, records the connection that vouched for it. A code redemption
-reuses one web connection per `(user, household, parent)`, named `Web (link from <parent client name>)`. Token paste uses
-`Web (token for <client name>)` with the PAT as parent. AuthKit sign-in keeps today's parentless `Web` connection.
+A page pass acts as a web connection named `Web (link from <client>)`, whose parent is the minting connection. A token-paste sign-in's
+web connection is named `Web (token for <client>)`, with the pasted token as parent. Any request under a web connection is refused if
+the connection or its parent is revoked.
 
-### Revocation
+## Page pass
 
-Nothing is cascaded by writes. Checks happen at use time:
+- **Storage.** The pass lives in its own signed, httpOnly `btr_pass` cookie, separate from the `btr_session` sign-in cookie. It holds up
+  to 10 passes. Each pass records its kind, id, household, user, web connection and expiry (24 hours from opening).
+- **How API requests use it.** The web API maps each request to the pass it would need (the table above). If a live pass covers the
+  request, that pass's principal serves it. If the browser is also signed in to the same household, the session is used. Otherwise the
+  session serves the request as before, or it's refused.
+- **It never widens a sign-in.** A pass can't reach settings, tokens, `/api/me` or any other page's data. A browser signed in to
+  household B that opens a link for household A keeps its B sign-in, and gains access only to that one A page.
 
-- **Redeeming a code** requires its minting connection to be unrevoked.
-- **Resolving a session** (`principalFromSession`) requires the session's connection and, if set, its parent to be unrevoked.
-
-So revoking a token immediately kills its unused codes and every browser session created from them or from pasting it. This also fixes
-deferred minor M7 (token-paste sessions surviving revocation).
-
-## Codes
+## Code format and guessing
 
 - **Format.** 8 characters from `ABCDEFGHJKMNPQRSTVWXYZ23456789` (no 0/O, 1/I/L, U), shown as `XXXX-XXXX`. About 6.6 × 10¹¹
-  possibilities. Input is normalized: uppercase, dashes and spaces removed.
-- **Lifetime.** `LOGIN_CODE_TTL_MINUTES`, default 10.
-- **Uses.** Up to 3, because chat apps' link previews can fetch a link before the person taps it.
-- **Redemption.** One atomic statement:
-  `UPDATE login_codes SET uses = uses + 1 WHERE code_hash = $1 AND uses < max_uses AND expires_at > now() RETURNING …`,
-  joined to an unrevoked minting connection. Concurrent taps cannot exceed the limit.
-- **Already signed in.** If the request already has a valid session for the same user and household as the code, the parameter is
-  stripped and no use is spent. One code can therefore go on every link in a message.
-- **Stale code, already signed in.** An invalid or expired code in a browser that already has a valid session is stripped and the page
-  opens, so an old link in the chat doesn't bounce anyone to the login screen. The failure still counts toward the rate limit.
-- **Other household.** A code for household A in a browser signed in to household B spends a use and replaces the session with A. The code
-  only ever grants its own household.
+  possibilities.
+- **Spending.** One atomic update: `uses < max_uses AND expires_at > now()`, and the minting connection unrevoked.
+- **Rate limit.** Failed `POST /auth/open` attempts are limited to 10 per client per 10 minutes, held in memory, which is fine for one
+  instance.
+  - IPv4 counts per address, IPv6 per /64 block, and IPv4-mapped IPv6 as IPv4.
+  - Page loads with `?login=` never redeem anything, so they never count, and old links in a chat don't use up anyone's budget.
+- **Client IP.** It comes from the socket. With `TRUST_PROXY=true`, the last `X-Forwarded-For` entry is used: the one the proxy appended.
+  The Vultr demo sets it, because Caddy is in front and the app port is bound to loopback.
 
-## Where the code is redeemed
+## Leak hygiene
 
-### `login` parameter middleware
-
-It runs on `GET` requests for web pages only: every path except `/api`, `/auth/`, `/mcp`, `/.well-known`, `/healthz` (the existing `RESERVED` list in `http/web.ts`) and the static `/assets`.
-
-
-- **Valid code:** set the session cookie, then `302` to the same path and query with `login` removed.
-- **Invalid, expired or used-up code:** `302` to `/login?reason=expired&next=<same path and query without login>`.
-- **Rate-limited:** `302` to `/login?reason=rate_limited&next=…`.
-- **Redirect targets:** every target goes through the existing `safeNext`.
-- **Never JSON:** it always answers with a redirect.
-
-### `POST /auth/code-login`
-
-For the typed code: `{ code, next? }`, then `{ ok, next }`, or `401 invalid_code` / `429 rate_limited`. Same redemption and rate limit.
-
-### Rate limit
-
-Failed redemptions are limited to 10 per client IP per 10 minutes, shared by both entry points. Successful ones don't count.
-
-- **Storage.** It is in memory, which is fine for today's single instance. Running more than one instance would need a shared store; the
-  spec notes this rather than building it.
-- **Client IP.** It comes from the socket, and with `TRUST_PROXY=true` (needed behind the Caddy proxy on the Vultr demo) the last `X-Forwarded-For` entry is used:
-  the one the trusted proxy appended. Earlier entries can be forged by the client.
-
-### Leak hygiene
-
-- The redirect happens before any page renders, so no script or `Referer` sees the code.
+- The code stays in the address bar only until Open is tapped, then `location.replace` drops it.
+- The Open screen loads nothing cross-origin except fonts, and `strict-origin-when-cross-origin` sends those only the origin.
 - There is no request logger today. Any logger added later must mask the `login` parameter.
 
 ## MCP
 
-### `get_login_code` tool
+`get_login_code({ url })`:
 
-- **Input:** none.
-- **Who can call it:** any authenticated MCP principal (PAT or OAuth).
-- **No idempotency key:** it changes no food records, and a retry just mints another short-lived code.
+- **Takes** a Buttery page URL, absolute or a path.
+- **Returns** `{ url, expires_at, opens: "once", how_to_use }`.
+- **Errors:** `invalid_input` for pages that can't be shared or other hosts, and `not_found` for another household's receipt or item.
 
-Returns:
-
-```json
-{
-  "code": "Q7X4-KM9P",
-  "expires_at": "2026-09-29T18:52:00Z",
-  "uses_left": 3,
-  "append": "login=Q7X4-KM9P",
-  "example": "https://buttery.example/inventory?login=Q7X4-KM9P",
-  "login_url": "https://buttery.example/login",
-  "how_to_use": "Append login=Q7X4-KM9P to every Buttery link you give the user in this message. For another device, give them the code and login_url. Mint a new code for each message with links; codes expire in 10 minutes."
-}
-```
-
-### Agent guidance
-
-- **Server instructions** (`mcp/instructions.ts`) gain a rule: when giving the user Buttery links, call `get_login_code` and append
-  `login=<code>` to each link.
-- **`whoami`** mentions the tool, so a new conversation discovers it.
+The server instructions and `whoami` tell agents to pass each Buttery link through it before sharing, one call per link.
 
 ## Web app
 
-### `/login`
-
-The code box comes first. The heading reads "Enter the code from your assistant", with one wide input:
-
-- `autocapitalize="characters"`, `autocomplete="one-time-code"`, `spellcheck=false`
-- the dash is optional
-
-Below it:
-
-- "Continue with your account" (AuthKit), when configured
-- "Create your household", when sign-up is open
-- "Use a token instead", a disclosure holding the existing token form
-
-Messages from `reason`:
-
-- **`expired`:** "That sign-in link has expired or was already used. Ask your assistant for a new one."
-- **`rate_limited`:** "Too many tries. Wait a few minutes and try again."
-- **Wrong typed code:** "That code didn't work. Check it, or ask your assistant for a new one."
-
-After success the browser goes to `next`, defaulting to `/inventory`.
-
-### Settings
-
-Unchanged. The token list still shows PATs only. Signing out one browser without revoking the agent is out of scope.
+- **Open screen.** When a Layout page's URL has `?login=`, the page renders the Open screen instead of its content:
+  - the heading "Open this receipt", "Open this item" or "Open your inventory"
+  - the line "This link opens just this page. It doesn't sign you in."
+  - an **Open** button
+- **Failure messages.**
+  - **Expired or used:** "This link has expired or was already used. Ask your assistant for a new one." with a "Sign in instead" link.
+  - **Rate limited:** "Too many tries. Wait a few minutes and try again."
+- **`/login` and Settings** are unchanged. `/login` sits outside the Layout and ignores `login`.
 
 ## Out of scope
 
-- Server-side rewriting of links in MCP responses (the original `/l/<code>` design)
-- Minting codes from the web app (e.g. "open on my phone" in Settings)
-- A shared rate-limit store for multiple instances
-- Per-session sign-out in Settings
+- Signing a browser in from a code, including the typed code for another device.
+- Signing out a single browser or pass from Settings.
+- A shared rate-limit store for multiple instances.
+- Revoking token-paste sessions created before this change. Those use the old parentless `Web` connection, so revoking their token doesn't
+  sign them out.
 
 ## Testing
 
-Tests are written first, following the ticket's acceptance list as amended here.
+### Server (`test/login-codes.test.ts`)
 
-### Server (Vitest)
+- **Minting**
+  - a one-time code for one page, stored only as an HMAC, with the page scope
+  - settings, login, other hosts and other households are refused
+- **Opening**
+  - a page load with `?login=` spends nothing
+  - Open grants that page's reads and writes, and refuses inventory, `/api/me` and tokens
+  - a second open is refused, and so is an expired code
+  - the Open screen is skipped for a signed-in same-household browser, or one that already has a pass, and no use is spent
+- **Scope**
+  - a household B sign-in is unchanged, and gains only the A page
+  - a receipt pass can undo only that receipt's change sets
+  - an item pass covers only that item
+- **Revocation**
+  - revoking the minting token kills its unused codes and the passes they granted
+  - revoking a pasted token signs out the browsers it signed in (M7)
+- **Limits and paths**
+  - the rate limit groups IPv6 by /64
+  - `login` is ignored on `/login`, `/settings`, the API and health paths
+  - old codes are pruned
+  - `get_login_code` works over MCP and `whoami` mentions it
 
-- Minting requires an authenticated MCP principal. The code is 8 characters, stored only as an HMAC, and scoped to the principal's
-  household and connection.
-- Redeeming works with or without the dash and in any case.
-- A code works 3 times. The 4th is refused. An expired code is refused.
-- Redeeming in a browser already signed in as the same user and household spends no use.
-- Revoking the minting token refuses its unused codes and invalidates sessions created from them. Revoking a pasted token invalidates
-  its token-paste sessions (M7).
-- A household A code never yields a session that can read household B.
-- The `login` middleware strips the parameter, keeps other query parameters, and never redirects off-site. It covers backslash, tab and
-  `//` in the path or `next`.
-- The 11th failed attempt from one IP within 10 minutes is rate-limited. Successful attempts don't count.
-- `/api`, `/auth`, `/mcp` and asset paths ignore `login`.
-- `get_login_code` through MCP returns the documented shape.
+### Phone e2e (`tests/e2e/05-login-code.spec.ts`)
 
-### Phone e2e (Playwright)
-
-- A fresh browser (no cookies) opens `/review/<id>?login=<code>`, lands on the review signed in, and the URL has no `login`.
-- An expired code lands on `/login` showing the expired message.
-- Typing a code on `/login` signs in and goes to `next`.
-
-### Manual
-
-- `get_login_code` from Claude Code against the local server, and the typed code signs in on `/login`.
+- A fresh browser opens a review link, sees "Open this receipt", taps Open and lands on the receipt with a clean URL. Tapping Inventory
+  then goes to `/login`.
+- An expired link shows the expired message and "Sign in instead".
 
 ## Follow-up to the ticket
 
-Update #2's "Links in MCP responses are signed" acceptance item to: "Agents append a minted code as `login=`. Any page URL with a
-valid `login` signs in and cleans the URL."
+Update #2 to match: links grant a page pass rather than a sign-in, codes are one-time behind an Open tap, and there are no typeable codes
+on `/login`.

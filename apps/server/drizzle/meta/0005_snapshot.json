@@ -1,5 +1,5 @@
 {
-  "id": "196adfa9-c09e-4ea1-8a61-1924e3808242",
+  "id": "78577a90-e96e-4b30-a86a-431d86fb8319",
   "prevId": "80b289c3-0067-4295-a310-39898ac5d166",
   "version": "7",
   "dialect": "postgresql",
@@ -196,6 +196,24 @@
           "primaryKey": false,
           "notNull": true
         },
+        "path": {
+          "name": "path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "scope_kind": {
+          "name": "scope_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "scope_id": {
+          "name": "scope_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "household_id": {
           "name": "household_id",
           "type": "uuid",
@@ -226,7 +244,7 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
-          "default": 3
+          "default": 1
         },
         "expires_at": {
           "name": "expires_at",

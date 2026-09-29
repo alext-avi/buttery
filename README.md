@@ -129,10 +129,9 @@ the agent, so most receipts are confirmed in conversation rather than on a scree
 Every state-changing call takes an `idempotency_key`. Retries are safe, and a re-sent receipt is
 detected as a duplicate instead of being counted twice.
 
-`get_login_code` mints a short sign-in code (10 minutes, up to 3 uses). The agent appends
-`login=<code>` to any Buttery link so tapping it signs the browser in, or gives the code to type at
-`/login` on another device. Revoking the agent's token also revokes its codes and the browser
-sessions they created.
+`get_login_code` turns a review, item or inventory link into a one-tap link: the person taps
+**Open** and sees that page for 24 hours without signing in. It doesn't sign the browser in or
+reach any other page. Revoking the agent's token also revokes its links and the access they gave.
 
 ## Getting started
 

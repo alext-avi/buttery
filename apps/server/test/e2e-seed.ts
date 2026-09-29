@@ -6,7 +6,7 @@ import { createDb } from '../src/db/client';
 import { runMigrations } from '../src/db/migrate';
 import { connections } from '../src/db/schema';
 import { provisionUser } from '../src/identity/provision';
-import { mintLoginCode } from '../src/identity/loginCodes';
+import { mintPageLink } from '../src/identity/loginCodes';
 import { hashToken } from '../src/identity/tokens';
 import { submitReceipt } from '../src/services/receipts';
 import { createFakeReasoning } from './helpers/fakeReasoning';
@@ -40,10 +40,10 @@ const dup = await submitReceipt({ db, config: loadConfig(), reasoning: createFak
   idempotency_key: 'e2e-seed-warehouse-dup',
 });
 
+const reviewPath = `/review/${r.proposal_id}`;
 const codes = {
-  link_code: (await mintLoginCode(db, loadConfig(), principal)).code,
-  typed_code: (await mintLoginCode(db, loadConfig(), principal)).code,
-  expired_code: (await mintLoginCode(db, loadConfig(), principal, new Date(Date.now() - 60 * 60_000))).code,
+  link_code: (await mintPageLink(db, loadConfig(), principal, reviewPath)).code,
+  expired_code: (await mintPageLink(db, loadConfig(), principal, reviewPath, new Date(Date.now() - 60 * 60_000))).code,
 };
 
 const out = fileURLToPath(new URL('../.e2e/', import.meta.url));

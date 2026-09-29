@@ -22,14 +22,29 @@ export function createFailureLimiter(limit = 10, windowMs = 10 * 60_000, now = (
   };
 }
 
+/**
+ * The rate-limit key for an address. IPv6 is grouped by /64, since one host usually controls the whole block;
+ * IPv4-mapped IPv6 is treated as IPv4.
+ */
+export function ipKey(ip: string): string {
+  const v4 = /^(?:::ffff:)?(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(ip);
+  if (v4) return v4[1]!;
+  if (!ip.includes(':')) return ip;
+  const [head = '', tail = ''] = ip.toLowerCase().split('%')[0]!.split('::');
+  const h = head ? head.split(':') : [];
+  const t = tail ? tail.split(':') : [];
+  const groups = ip.includes('::') ? [...h, ...Array(8 - h.length - t.length).fill('0'), ...t] : h;
+  return `${groups.slice(0, 4).map((g) => g.replace(/^0+(?=.)/, '')).join(':')}::/64`;
+}
+
 /** With a trusted proxy, its appended X-Forwarded-For entry (the last one) is the client; earlier entries can be forged. */
 export function clientIp(c: Context, trustProxy: boolean): string {
   if (trustProxy) {
     const last = c.req.header('x-forwarded-for')?.split(',').pop()?.trim();
-    if (last) return last;
+    if (last) return ipKey(last);
   }
   try {
-    return getConnInfo(c).remote.address ?? 'unknown';
+    return ipKey(getConnInfo(c).remote.address ?? 'unknown');
   } catch {
     return 'unknown';
   }

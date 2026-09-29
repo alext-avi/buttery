@@ -1,11 +1,14 @@
 CREATE TABLE "login_codes" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"code_hash" text NOT NULL,
+	"path" text NOT NULL,
+	"scope_kind" text NOT NULL,
+	"scope_id" uuid,
 	"household_id" uuid NOT NULL,
 	"user_id" uuid NOT NULL,
 	"connection_id" uuid NOT NULL,
 	"uses" integer DEFAULT 0 NOT NULL,
-	"max_uses" integer DEFAULT 3 NOT NULL,
+	"max_uses" integer DEFAULT 1 NOT NULL,
 	"expires_at" timestamp with time zone NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "login_codes_code_hash_unique" UNIQUE("code_hash")
