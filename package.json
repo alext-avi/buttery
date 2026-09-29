@@ -4,7 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "playwright test"
+    "test": "playwright test",
+    "reasoning:ping": "npm run ping -w packages/reasoning",
+    "reasoning:eval": "npm run eval -w packages/reasoning --"
   },
   "keywords": [],
   "author": "",
@@ -12,5 +14,9 @@
   "type": "commonjs",
   "devDependencies": {
     "@playwright/test": "^1.63.0"
-  }
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ]
 }
