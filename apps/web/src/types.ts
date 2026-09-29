@@ -9,6 +9,7 @@ export type OpView = {
   op: 'add_lot' | 'ignore_line';
   decision: 'pending' | 'accepted' | 'edited' | 'rejected' | 'conflict';
   applied: boolean;
+  change_set_id: string | null;
   confidence: Confidence;
   rationale: string | null;
   line: { line_id: string; raw_text: string; detail?: string; quantity?: number; unit?: string; price_cents?: number };

@@ -3,17 +3,19 @@ import { amount, money } from '../format';
 import type { Edits, OpView, Quantity } from '../types';
 import { ConfidenceBadge, ExpiryBadge } from './Badges';
 
-export type Choice = { action: 'accept' } | { action: 'reject' } | { action: 'edit'; edits: Edits };
+/** Each button saves straight away: add this line, skip it, save an edit and add it, or undo it. */
+export type LineActions = {
+  add: (edits?: Edits) => void;
+  skip: () => void;
+  undo: (changeSetId: string) => void;
+  /** Saving, or waiting on the "different purchase" confirmation. */
+  disabled: boolean;
+};
 
 const LOCATIONS = ['fridge', 'freezer', 'pantry', 'counter'];
 const UNITS = ['count', 'g', 'kg', 'oz', 'lb', 'ml', 'l', 'fl_oz', 'cup', 'pt', 'qt', 'gal'];
 
-function describe(q: Quantity): string {
-  if (q.kind === 'unknown' || q.amount === undefined) return 'Amount unknown';
-  return `${q.kind === 'approx' ? '~' : ''}${q.amount}${q.unit && q.unit !== 'count' ? ` ${q.unit}` : ''}`;
-}
-
-export function OpCard({ op, today, choice, onChange }: { op: OpView; today: string; choice: Choice; onChange?: (c: Choice) => void }) {
+export function OpCard({ op, today, actions }: { op: OpView; today: string; actions?: LineActions }) {
   const [editing, setEditing] = useState(false);
 
   if (op.op === 'ignore_line' || !op.draft) {
@@ -31,9 +33,7 @@ export function OpCard({ op, today, choice, onChange }: { op: OpView; today: str
   }
 
   const d = op.draft;
-  const edits = choice.action === 'edit' ? choice.edits : {};
-  const name = edits.new_food?.name ?? op.candidates.find((c) => c.food_id === edits.food_id)?.name ?? d.food_name;
-  const skipped = choice.action === 'reject';
+  const skipped = op.decision === 'rejected' && !op.applied;
 
   return (
     <li className={skipped ? 'skipped' : undefined} data-testid="op">
@@ -42,39 +42,50 @@ export function OpCard({ op, today, choice, onChange }: { op: OpView; today: str
         {op.line.price_cents !== undefined && <span>{money(op.line.price_cents)}</span>}
       </div>
       <div className="title-row">
-        <strong className="name">{name}</strong>
-        {d.is_new_food && !edits.food_id && <span className="badge new">New item</span>}
-        {!op.applied && <ConfidenceBadge value={op.confidence} />}
-        {choice.action === 'edit' && !op.applied && <span className="badge">Edited</span>}
+        <strong className="name">{d.food_name}</strong>
+        {d.is_new_food && <span className="badge new">New item</span>}
+        {!op.applied && !skipped && <ConfidenceBadge value={op.confidence} />}
+        {op.decision === 'edited' && <span className="badge">Edited</span>}
         {op.applied && <span className="badge ok">Added</span>}
         {skipped && <span className="badge">Skipped</span>}
       </div>
       <div className="meta">
-        {edits.quantity ? describe(edits.quantity) : amount(d.quantity_text)} · {edits.location ?? d.location} ·{' '}
-        <ExpiryBadge expires={edits.expires_on ? { on: edits.expires_on, kind: 'printed' } : d.expires_preview} today={today} />
+        {amount(d.quantity_text)} · {d.location} · <ExpiryBadge expires={d.expires_preview} today={today} />
       </div>
       {op.confidence === 'low' && op.rationale && !op.applied && <div className="hint">{op.rationale}</div>}
 
-      {onChange && !op.applied && !editing && (
+      {actions && !editing && (
         <div className="actions">
-          <button type="button" className={skipped ? '' : 'selected'} aria-pressed={!skipped} onClick={() => onChange(choice.action === 'edit' ? choice : { action: 'accept' })}>
-            Add
-          </button>
-          <button type="button" className={skipped ? 'selected' : ''} aria-pressed={skipped} onClick={() => onChange({ action: 'reject' })}>
-            Skip
-          </button>
-          <button type="button" onClick={() => setEditing(true)}>
-            Edit
-          </button>
+          {op.applied ? (
+            op.change_set_id && (
+              <button type="button" onClick={() => actions.undo(op.change_set_id!)} disabled={actions.disabled}>
+                Undo
+              </button>
+            )
+          ) : (
+            <>
+              <button type="button" className="primary" onClick={() => actions.add()} disabled={actions.disabled}>
+                Add
+              </button>
+              {!skipped && (
+                <button type="button" onClick={actions.skip} disabled={actions.disabled}>
+                  Skip
+                </button>
+              )}
+              <button type="button" onClick={() => setEditing(true)} disabled={actions.disabled}>
+                Edit
+              </button>
+            </>
+          )}
         </div>
       )}
-      {onChange && editing && (
+      {actions && editing && (
         <EditForm
           op={op}
-          initial={edits}
+          initial={{}}
           onCancel={() => setEditing(false)}
           onSave={(e) => {
-            onChange({ action: 'edit', edits: e });
+            actions.add(e);
             setEditing(false);
           }}
         />
@@ -160,7 +171,7 @@ function EditForm({ op, initial, onSave, onCancel }: { op: OpView; initial: Edit
       </label>
       <div className="actions">
         <button type="submit" className="primary">
-          Save
+          Save and add
         </button>
         <button type="button" onClick={onCancel}>
           Cancel

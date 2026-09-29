@@ -38,6 +38,8 @@ export type OpView = {
   op: string;
   decision: string;
   applied: boolean;
+  /** The change set that added this line, so it can be undone on its own. */
+  change_set_id: string | null;
   confidence: string;
   rationale: string | null;
   line: LineSnapshot;
@@ -91,6 +93,7 @@ function toOpView(o: ProposalOpRow, foodsById: Map<string, FoodRow>, today: stri
     op: o.op,
     decision: o.decision,
     applied: Boolean(o.appliedAt),
+    change_set_id: o.resultChangeSetId ?? null,
     confidence: o.confidence,
     rationale: o.rationale,
     candidates: o.candidates.map((c) => ({ food_id: c.food_id, name: c.name })),

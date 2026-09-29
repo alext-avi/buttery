@@ -1,8 +1,8 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { api, ApiError, newKey } from '../api';
 import { ErrorBox } from '../components/ErrorBox';
-import { OpCard, type Choice } from '../components/OpCard';
+import { OpCard, type LineActions } from '../components/OpCard';
 import { dateOnly, titleCase } from '../format';
 import type { Decision, OpView, ResolveResponse } from '../types';
 import { useLoad } from '../useLoad';
@@ -10,26 +10,16 @@ import { useLoad } from '../useLoad';
 export function Review() {
   const { proposalId = '' } = useParams();
   const { data, error, loading, setData, reload } = useLoad(() => api.proposal(proposalId), [proposalId]);
-  const [choices, setChoices] = useState<Record<string, Choice>>({});
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<ResolveResponse | null>(null);
+  const [saved, setSaved] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [notDuplicate, setNotDuplicate] = useState(false);
-  const applyKey = useRef(newKey());
-  const undoKey = useRef(newKey());
 
   if (loading && !data) return <p className="muted">Loading…</p>;
   if (error) return <ErrorBox error={error} />;
   if (!data) return null;
 
-  const choiceFor = (o: OpView): Choice => choices[o.op_id] ?? (o.decision === 'rejected' ? { action: 'reject' } : { action: 'accept' });
-  const setChoice = (id: string) => (c: Choice) => {
-    setChoices((prev) => ({ ...prev, [id]: c }));
-    applyKey.current = newKey();
-  };
   const open = data.ops.filter((o) => !o.applied);
-  // Skipped lines stay re-addable, but only undecided lines (or a changed choice) need the action bar.
-  const hasWork = open.some((o) => o.decision === 'pending') || Object.keys(choices).length > 0;
   const lotOps = data.ops.filter((o) => o.op === 'add_lot');
   // Follow the verdict: every open line that isn't high confidence needs a look, low confidence first.
   const toCheck = new Set((data.lines_to_check ?? []).map((l) => l.op_id));
@@ -38,43 +28,42 @@ export function Review() {
     .sort((a, b) => (a.confidence === 'low' ? 0 : 1) - (b.confidence === 'low' ? 0 : 1));
   const others = lotOps.filter((o) => !needsLook.includes(o));
   const ignored = data.ops.filter((o) => o.op === 'ignore_line');
-  const openLots = open.filter((o) => o.op === 'add_lot').length;
-  const added = lotOps.filter((o) => o.applied && o.decision !== 'rejected').length;
-  const adding = open.filter((o) => o.op === 'add_lot' && choiceFor(o).action !== 'reject').length;
+  const added = lotOps.filter((o) => o.applied).length;
+  // Lines nobody has decided on yet; skipped lines stay skipped until someone adds them.
+  const remaining = open.filter((o) => o.op === 'add_lot' && o.decision === 'pending');
 
-  async function apply() {
+  /** Every button saves straight away. Lines that never go to inventory (coupons, bag fees) are settled along the way. */
+  async function save(decisions: Decision[], apply: boolean, done: (r: ResolveResponse) => string | null) {
     setBusy(true);
     setActionError(null);
     try {
-      const decisions: Decision[] = open.map((o) => {
-        const c = o.op === 'ignore_line' ? ({ action: 'accept' } as Choice) : choiceFor(o);
-        return c.action === 'edit' ? { op_id: o.op_id, action: 'edit', edits: c.edits } : { op_id: o.op_id, action: c.action };
-      });
+      const settle: Decision[] = apply ? open.filter((o) => o.op === 'ignore_line').map((o) => ({ op_id: o.op_id, action: 'accept' })) : [];
       const res = await api.resolve(proposalId, {
-        decisions,
+        decisions: [...decisions, ...settle],
         accept_remaining: false,
-        apply: true,
-        idempotency_key: applyKey.current,
+        apply,
+        idempotency_key: newKey(),
         confirm_possible_duplicate: notDuplicate,
       });
-      applyKey.current = newKey();
-      setChoices({});
-      setResult(res);
       setData(res);
+      setSaved(done(res));
     } catch (e) {
       setActionError(e instanceof ApiError ? e.message : 'Something went wrong. Try again.');
     } finally {
       setBusy(false);
     }
   }
+  const addedMessage = (r: ResolveResponse) => {
+    const n = r.created_lot_ids.length;
+    return n ? `Added ${n === 1 ? (r.ops.find((o) => o.change_set_id === r.applied_change_set_id)?.draft?.food_name ?? '1 item') : `${n} items`} to inventory.` : null;
+  };
 
-  async function undo() {
-    if (!result?.applied_change_set_id) return;
+  async function undo(changeSetId: string) {
     setBusy(true);
+    setActionError(null);
     try {
-      await api.undo(result.applied_change_set_id, undoKey.current);
-      undoKey.current = newKey();
-      setResult(null);
+      await api.undo(changeSetId, newKey());
+      setSaved('Undone. The line is back to review.');
       reload();
     } catch (e) {
       setActionError(e instanceof ApiError ? e.message : 'Could not undo. Try again.');
@@ -89,7 +78,13 @@ export function Review() {
   const otherReasons = (data.verdict?.reasons ?? []).filter((r) => !r.startsWith('May duplicate'));
   const otherNotes = data.observation.uncertainties.filter((u) => !u.includes('already recorded'));
 
-  const card = (o: OpView) => <OpCard key={o.op_id} op={o} today={data.today} choice={choiceFor(o)} onChange={o.applied ? undefined : setChoice(o.op_id)} />;
+  const actionsFor = (o: OpView): LineActions => ({
+    add: (edits) => save([edits ? { op_id: o.op_id, action: 'edit', edits } : { op_id: o.op_id, action: 'accept' }], true, addedMessage),
+    skip: () => save([{ op_id: o.op_id, action: 'reject' }], false, () => `Skipped ${o.draft?.food_name ?? 'that line'}.`),
+    undo,
+    disabled: busy || needsDuplicateConfirm,
+  });
+  const card = (o: OpView) => <OpCard key={o.op_id} op={o} today={data.today} actions={o.op === 'add_lot' ? actionsFor(o) : undefined} />;
 
   return (
     <div>
@@ -113,29 +108,22 @@ export function Review() {
           <span>to check</span>
         </div>
         <div className="stat">
-          <b>{open.length > 0 ? adding : added}</b>
-          <span>{open.length > 0 ? 'adding' : 'added'}</span>
+          <b>{added}</b>
+          <span>added</span>
         </div>
       </div>
 
-      {result?.applied_change_set_id && (
+      {saved && (
         <div className="banner ok" role="status">
-          <strong>
-            Added {result.created_lot_ids.length} item{result.created_lot_ids.length === 1 ? '' : 's'}
-          </strong>{' '}
-          to inventory.{' '}
-          <button className="link" onClick={undo} disabled={busy}>
-            Undo
-          </button>{' '}
-          · <Link to="/inventory">View inventory</Link>
+          {saved} <Link to="/inventory">View inventory</Link>
         </div>
       )}
-      {!result && data.proposal.status === 'applied' && (
+      {!saved && data.proposal.status === 'applied' && (
         <div className="banner ok">
           This receipt is done. <Link to="/inventory">View inventory</Link>
         </div>
       )}
-      {data.verdict && !result && !duplicateActive && (
+      {data.verdict && added === 0 && !duplicateActive && (
         <div className={`banner ${data.verdict.verdict === 'safe_to_apply' ? 'ok' : data.verdict.verdict === 'quick_check' ? '' : 'warn'}`} data-testid="verdict">
           <strong>
             {data.verdict.verdict === 'safe_to_apply' ? 'Looks right.' : data.verdict.verdict === 'quick_check' ? 'Mostly confident.' : 'Needs a review.'}
@@ -199,12 +187,18 @@ export function Review() {
         </section>
       )}
 
-      {hasWork && (
+      {remaining.length > 1 && (
         <div className="action-bar">
           <div className="action-bar-inner">
-            <span>{openLots > 0 ? `${adding} of ${openLots} item${openLots === 1 ? '' : 's'} will be added` : 'Nothing new to add'}</span>
-            <button className="primary" onClick={apply} disabled={busy || needsDuplicateConfirm}>
-              {busy ? 'Saving…' : adding > 0 ? `Add ${adding} item${adding === 1 ? '' : 's'}` : 'Confirm'}
+            <span>
+              {remaining.length} items not added yet
+            </span>
+            <button
+              className="primary"
+              onClick={() => save(remaining.map((o) => ({ op_id: o.op_id, action: 'accept' })), true, addedMessage)}
+              disabled={busy || needsDuplicateConfirm}
+            >
+              {busy ? 'Saving…' : `Add all ${remaining.length}`}
             </button>
           </div>
         </div>
