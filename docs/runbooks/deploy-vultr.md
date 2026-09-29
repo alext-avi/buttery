@@ -29,6 +29,7 @@ Set `DEMO_PUBLIC_BASE_URL` in the host env file to the exact HTTPS origin. Use a
 | Deploy user | `buttery` (member of `docker`), owning `/opt/buttery`. `authorized_keys` holds only the CI public key, with the `restrict` option (no forwarding, no PTY). |
 | Env file | `/opt/buttery/.env.demo`, mode 600, owner `buttery`. Separate random `DEMO_DB_PASSWORD` and `DEMO_SESSION_SECRET` generated on the host, `REASONING_PROVIDER=crusoe` with the demo's Crusoe key, `SIGNUP_MODE=closed`. |
 | Ingress | Caddy in `/opt/ingress` (Compose project `buttery-ingress`, from `deploy/vultr/ingress.compose.yaml` and `deploy/vultr/Caddyfile`). It uses host networking, forwards to `127.0.0.1:8793`, never buffers (`flush_interval -1`) and allows 10-minute reads for streaming MCP. It's managed outside the deployment workflow. |
+| Host firewall (UFW) | Vultr's Ubuntu image enables UFW with only SSH allowed. Because Caddy uses host networking (unlike Docker-published ports, which bypass UFW), 80/tcp, 443/tcp and 443/udp are allowed explicitly: `ufw allow 80/tcp && ufw allow 443/tcp && ufw allow 443/udp`. Without this, Let's Encrypt validation and all HTTPS traffic time out. |
 | Firewall group | `buttery-demo`: 80/443 open; 22 open to all, because GitHub-hosted runners have no fixed source IP. SSH accepts keys only: password and keyboard-interactive auth are disabled in `/etc/ssh/sshd_config.d/00-buttery.conf`. |
 | Operator access | `root` with the operator's own SSH key (not the CI key). |
 | Host key | `DEPLOY_KNOWN_HOSTS` is the host's `ssh_host_ed25519_key.pub` (`SHA256:Pw3NwO1+zNBxB9I8QMwbTcBCftfE9u58KDqKjzhf4nE`). It was read over the operator's session and matches the fingerprint recorded on the first connection to the freshly created VM (trust on first use; Vultr's API doesn't expose host keys). |
@@ -53,6 +54,15 @@ ssh root@<host> 'sudo -u buttery docker compose --project-name buttery-demo --en
 `/opt/buttery/.local/demo-releases/backups` first if you need it), the firewall group
 `buttery-demo` and the SSH key `buttery-demo-alext`. Then remove the `demo` environment's secrets,
 and rotate the Vultr API key and the Crusoe key.
+
+## First automatic deployments (2026-09-29)
+
+| Run | Result |
+|---|---|
+| PR #4 checks (typecheck, tests, web build, script syntax) | PASS on both commits; deploy skipped on PRs |
+| Merge `10cf7df`, first attempt | Promotion on Vultr PASS (digest pulled, migrated, healthy); public smoke check FAIL: UFW blocked 443 (fixed as above) |
+| Re-run of the same merge | PASS: rehearsal, GHCR publish, **pre-migration backup** (the database had tables), promotion, and public HTTPS smoke (health, UI assets, MCP `401`) |
+| Authenticated check on the demo (test household `verify@buttery.test`) | PASS: MCP `initialize`, 8 tools, `submit_observation` in 2.9 s; 7 reasoning calls with `provider = crusoe`, `deepseek-ai/Deepseek-V4-Flash`, all valid, no fallback |
 
 ## GitHub configuration
 
