@@ -16,7 +16,7 @@ describe('MCP receipt flow', () => {
     const { token } = await seedUser(testDb());
     const client = await mcpClient(server.url, token);
     const names = (await client.listTools()).tools.map((t) => t.name).sort();
-    expect(names).toEqual(['get_household_summary', 'get_item', 'resolve_proposal', 'search_inventory', 'submit_observation', 'undo', 'upsert_food', 'whoami']);
+    expect(names).toEqual(['get_household_summary', 'get_item', 'get_login_code', 'resolve_proposal', 'search_inventory', 'submit_observation', 'undo', 'upsert_food', 'whoami']);
     expect(client.getInstructions()).toContain('get_household_summary');
     await client.close();
   });

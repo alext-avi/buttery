@@ -4,6 +4,7 @@ import type { Principal } from '../identity/principal';
 import { MCP_INSTRUCTIONS } from './instructions';
 import { registerFoodTools } from './tools/foods';
 import { registerInventoryTools } from './tools/inventory';
+import { registerLoginTools } from './tools/login';
 import { registerObservationTools } from './tools/observations';
 import { registerWhoami } from './tools/whoami';
 
@@ -13,5 +14,6 @@ export function buildMcpServer(deps: AppDeps, p: Principal): McpServer {
   registerInventoryTools(server, deps, p);
   registerObservationTools(server, deps, p);
   registerFoodTools(server, deps, p);
+  registerLoginTools(server, deps, p);
   return server;
 }

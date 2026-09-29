@@ -1,4 +1,4 @@
-import { pgTable, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { integer, pgTable, primaryKey, text, timestamp, uuid, type AnyPgColumn } from 'drizzle-orm/pg-core';
 
 export const ts = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' });
 
@@ -38,7 +38,22 @@ export const connections = pgTable('connections', {
   oauthClientId: text('oauth_client_id'),
   tokenHash: text('token_hash').unique(),
   tokenPrefix: text('token_prefix'),
+  /** The connection that vouched for this one: a web session created from a login code or a pasted token. */
+  parentConnectionId: uuid('parent_connection_id').references((): AnyPgColumn => connections.id),
   lastUsedAt: ts('last_used_at'),
   revokedAt: ts('revoked_at'),
+  createdAt: ts('created_at').notNull().defaultNow(),
+});
+
+/** Short-lived sign-in codes minted by an agent connection. Only an HMAC of the code is stored. */
+export const loginCodes = pgTable('login_codes', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  codeHash: text('code_hash').notNull().unique(),
+  householdId: uuid('household_id').notNull().references(() => households.id),
+  userId: uuid('user_id').notNull().references(() => users.id),
+  connectionId: uuid('connection_id').notNull().references(() => connections.id),
+  uses: integer('uses').notNull().default(0),
+  maxUses: integer('max_uses').notNull().default(3),
+  expiresAt: ts('expires_at').notNull(),
   createdAt: ts('created_at').notNull().defaultNow(),
 });

@@ -1,6 +1,7 @@
 import type { Context } from 'hono';
 import { deleteCookie, getSignedCookie, setSignedCookie } from 'hono/cookie';
 import { and, eq, isNull } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import type { Config } from '../config';
 import type { Db } from '../db/client';
 import { connections } from '../db/schema';
@@ -34,13 +35,19 @@ export function clearSession(c: Context): void {
   deleteCookie(c, COOKIE, { path: '/' });
 }
 
+const parent = alias(connections, 'parent');
+
+/** The session's connection must be live, and so must the connection that vouched for it, if any. */
 export async function principalFromSession(db: Db, s: SessionData): Promise<Principal | null> {
-  const [conn] = await db
-    .select()
+  const [row] = await db
+    .select({ conn: connections, parentRevokedAt: parent.revokedAt })
     .from(connections)
+    .leftJoin(parent, eq(parent.id, connections.parentConnectionId))
     .where(and(eq(connections.id, s.c), eq(connections.userId, s.u), eq(connections.householdId, s.h), isNull(connections.revokedAt)))
     .limit(1);
-  return conn ? { userId: conn.userId, householdId: conn.householdId, connectionId: conn.id, clientName: conn.clientName } : null;
+  if (!row || row.parentRevokedAt) return null;
+  const conn = row.conn;
+  return { userId: conn.userId, householdId: conn.householdId, connectionId: conn.id, clientName: conn.clientName };
 }
 
 const LOCAL = 'http://buttery.local';

@@ -96,7 +96,7 @@ Failed redemptions are limited to 10 per client IP per 10 minutes, shared by bot
 
 - **Storage.** It is in memory, which is fine for today's single instance. Running more than one instance would need a shared store; the
   spec notes this rather than building it.
-- **Client IP.** It comes from the socket, and with `TRUST_PROXY=true` (needed behind Tailscale Funnel) the last `X-Forwarded-For` entry is used:
+- **Client IP.** It comes from the socket, and with `TRUST_PROXY=true` (needed behind the Caddy proxy on the Vultr demo) the last `X-Forwarded-For` entry is used:
   the one the trusted proxy appended. Earlier entries can be forged by the client.
 
 ### Leak hygiene

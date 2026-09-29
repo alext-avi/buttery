@@ -121,13 +121,18 @@ docker/, Dockerfile, docker-compose.yml   Container build and local stack
 ## MCP tools
 
 `whoami` · `submit_observation` · `resolve_proposal` · `undo` · `upsert_food` ·
-`get_household_summary` · `search_inventory` · `get_item`
+`get_household_summary` · `search_inventory` · `get_item` · `get_login_code`
 
 `submit_observation` returns the receipt's verdict, the lines worth a glance and the next step for
 the agent, so most receipts are confirmed in conversation rather than on a screen.
 
 Every state-changing call takes an `idempotency_key`. Retries are safe, and a re-sent receipt is
 detected as a duplicate instead of being counted twice.
+
+`get_login_code` mints a short sign-in code (10 minutes, up to 3 uses). The agent appends
+`login=<code>` to any Buttery link so tapping it signs the browser in, or gives the code to type at
+`/login` on another device. Revoking the agent's token also revokes its codes and the browser
+sessions they created.
 
 ## Getting started
 

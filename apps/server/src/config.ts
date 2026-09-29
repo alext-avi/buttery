@@ -7,6 +7,9 @@ const EnvSchema = z.object({
   SESSION_SECRET: z.string().min(32),
   WEB_DIST_DIR: z.string().optional(),
   SIGNUP_MODE: z.enum(['open', 'closed']).default('open'),
+  LOGIN_CODE_TTL_MINUTES: z.coerce.number().int().min(1).max(60).default(10),
+  /** Behind a reverse proxy (Caddy on the Vultr demo), read the client IP from X-Forwarded-For for rate limiting. */
+  TRUST_PROXY: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
   AUTHKIT_DOMAIN: z.url().optional(),
   AUTHKIT_ISSUER: z.url().optional(),
   AUTHKIT_AUDIENCE: z.string().optional(),
