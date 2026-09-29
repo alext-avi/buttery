@@ -1,0 +1,21 @@
+# HTTPS ingress for the Vultr demo host. The deployment workflow manages the app
+# (deploy/demo/compose.yaml, project buttery-demo, 127.0.0.1:8793); this is managed separately
+# and changes rarely. Install once on the host (see docs/runbooks/deploy-vultr.md):
+#   docker compose --project-name buttery-ingress --env-file /opt/ingress/.env -f /opt/ingress/compose.yaml up -d
+name: buttery-ingress
+services:
+  caddy:
+    image: caddy:2
+    # Host networking so Caddy can reach the app on the host's loopback (127.0.0.1:8793).
+    network_mode: host
+    environment:
+      DEMO_HOST: ${DEMO_HOST:?Set DEMO_HOST, e.g. 140-82-48-162.sslip.io}
+      DEMO_UPSTREAM: ${DEMO_UPSTREAM:-127.0.0.1:8793}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+volumes:
+  caddy_data:
+  caddy_config:

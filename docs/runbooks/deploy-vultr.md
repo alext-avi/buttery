@@ -20,6 +20,40 @@ Set `DEMO_PUBLIC_BASE_URL` in the host env file to the exact HTTPS origin. Use a
 
 **Do not copy the developer `.env`, `.local`, Claude subscription credential, or a local database to this VM.** The demo has its own database and runtime credentials. Configure AuthKit against the demo callback URL if account sign-in is desired; otherwise token sign-in works for a provisioned demo user. With `SIGNUP_MODE=closed`, provision/invite the presenter before the demo. The Claude Code subscription powers the local DuploCloud agent; it is not a server runtime credential.
 
+## The provisioned host (2026-09-29)
+
+| | |
+|---|---|
+| Demo URL | `https://140-82-48-162.sslip.io` (`DEMO_URL`). [sslip.io](https://sslip.io) resolves the name to the VM's IP, so Let's Encrypt works without a domain. |
+| VM | Vultr `buttery-demo`: `vc2-2c-4gb` (2 vCPU, 4 GB, AMD64), Silicon Valley (`sjc`), Ubuntu 24.04, `140.82.48.162`. About $0.027/hr. |
+| Deploy user | `buttery` (member of `docker`), owning `/opt/buttery`. `authorized_keys` holds only the CI public key, with the `restrict` option (no forwarding, no PTY). |
+| Env file | `/opt/buttery/.env.demo`, mode 600, owner `buttery`. Separate random `DEMO_DB_PASSWORD` and `DEMO_SESSION_SECRET` generated on the host, `REASONING_PROVIDER=crusoe` with the demo's Crusoe key, `SIGNUP_MODE=closed`. |
+| Ingress | Caddy in `/opt/ingress` (Compose project `buttery-ingress`, from `deploy/vultr/ingress.compose.yaml` and `deploy/vultr/Caddyfile`). It uses host networking, forwards to `127.0.0.1:8793`, never buffers (`flush_interval -1`) and allows 10-minute reads for streaming MCP. It's managed outside the deployment workflow. |
+| Firewall group | `buttery-demo`: 80/443 open; 22 open to all, because GitHub-hosted runners have no fixed source IP. SSH accepts keys only: password and keyboard-interactive auth are disabled in `/etc/ssh/sshd_config.d/00-buttery.conf`. |
+| Operator access | `root` with the operator's own SSH key (not the CI key). |
+| Host key | `DEPLOY_KNOWN_HOSTS` is the host's `ssh_host_ed25519_key.pub` (`SHA256:Pw3NwO1+zNBxB9I8QMwbTcBCftfE9u58KDqKjzhf4nE`). It was read over the operator's session and matches the fingerprint recorded on the first connection to the freshly created VM (trust on first use; Vultr's API doesn't expose host keys). |
+
+To install or change the ingress:
+
+```sh
+scp deploy/vultr/ingress.compose.yaml root@<host>:/opt/ingress/compose.yaml
+scp deploy/vultr/Caddyfile root@<host>:/opt/ingress/Caddyfile
+ssh root@<host> 'printf "DEMO_HOST=<ip-with-dashes>.sslip.io\nDEMO_UPSTREAM=127.0.0.1:8793\n" > /opt/ingress/.env &&
+  cd /opt/ingress && docker compose --env-file .env -f compose.yaml up -d'
+```
+
+Presenter tokens: sign-up is closed, so create one on the host:
+
+```sh
+ssh root@<host> 'sudo -u buttery docker compose --project-name buttery-demo --env-file /opt/buttery/.env.demo \
+  -f /opt/buttery/deploy/demo/compose.yaml exec -T app npm run token:create -- --email you@example.com --client "Claude Code"'
+```
+
+**Teardown after the event:** delete the Vultr instance `buttery-demo` (download a backup from
+`/opt/buttery/.local/demo-releases/backups` first if you need it), the firewall group
+`buttery-demo` and the SSH key `buttery-demo-alext`. Then remove the `demo` environment's secrets,
+and rotate the Vultr API key and the Crusoe key.
+
 ## GitHub configuration
 
 In `alext-avi/buttery`, create an environment named **`demo`**, allow deployments from **`main`**, and leave required reviewers off for automatic deployment.
