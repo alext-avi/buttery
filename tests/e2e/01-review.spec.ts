@@ -11,8 +11,11 @@ test.describe.serial('receipt review on a phone', () => {
     await expect(page.getByRole('heading', { name: 'PANTRY CLUB' })).toBeVisible();
     await expect(page.getByText('GRK YOGURT 2X32 OZ')).toBeVisible();
     await expect(page.getByText('shared by Alex via Claude iOS')).toBeVisible();
-    // Estimated expiry shows its basis, naming the model that produced it.
-    await expect(page.getByTestId('op').filter({ hasText: 'CHKN BREAST 3 LB' })).toContainText('model_estimate, fake-1, medium');
+    // Estimated expiry reads as plain language, without model or confidence jargon.
+    const chicken = page.getByTestId('op').filter({ hasText: 'CHKN BREAST 3 LB' });
+    await expect(chicken).toContainText(/Good until about|Best used|Probably past its best/);
+    await expect(chicken).not.toContainText('model_estimate');
+    await expect(chicken).not.toContainText('confidence');
     await expectNoHorizontalScroll(page);
   });
 

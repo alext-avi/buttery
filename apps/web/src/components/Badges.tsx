@@ -1,14 +1,14 @@
-import type { Confidence, Urgency } from '../types';
+import { expiryLabel, expiryNote } from '../format';
+import type { Confidence, Expiry, Urgency } from '../types';
 
 export function ConfidenceBadge({ value }: { value: Confidence }) {
-  return <span className={`badge conf-${value}`}>{value === 'low' ? 'Check this' : `${value} confidence`}</span>;
+  return value === 'low' ? <span className="badge conf-low">Check this</span> : null;
 }
 
-export function ExpiryBadge({ text, urgency, kind }: { text: string; urgency?: Urgency | null; kind?: 'printed' | 'estimated' }) {
-  const title = kind === 'estimated' ? 'Estimated expiry' : kind === 'printed' ? 'Printed on the package' : undefined;
+export function ExpiryBadge({ expires, urgency, today }: { expires: Expiry | Pick<Expiry, 'on' | 'kind'> | null; urgency?: Urgency | null; today: string }) {
   return (
-    <span className={`expiry ${urgency ?? ''}`} title={title}>
-      {text}
+    <span className={`expiry ${urgency ?? ''}`} title={expires && 'confidence' in expires ? (expiryNote(expires) ?? undefined) : undefined}>
+      {expiryLabel(expires, today)}
     </span>
   );
 }

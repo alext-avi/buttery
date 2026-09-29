@@ -3,10 +3,12 @@ import { Link, useParams } from 'react-router';
 import { api, ApiError, newKey } from '../api';
 import { ExpiryBadge } from '../components/Badges';
 import { ErrorBox } from '../components/ErrorBox';
-import { money, when } from '../format';
+import { ago, amount, cap, dateOnly, expiryNote, money, titleCase, when } from '../format';
 import { useLoad } from '../useLoad';
 
-const OP_LABEL: Record<string, string> = { add_lot: 'Added', void_lot: 'Removed (undo)' };
+const OP_LABEL: Record<string, string> = { add_lot: 'Added', void_lot: 'Removed' };
+const STATUS_LABEL: Record<string, string> = { voided: 'removed' };
+const isReceipt = (label: string) => label.startsWith('Receipt:');
 
 export function Item() {
   const { lotId = '' } = useParams();
@@ -19,19 +21,17 @@ export function Item() {
   if (error) return <ErrorBox error={error} />;
   if (!data) return null;
   const l = data.lot;
-  const models = [...new Set(data.reasoning.map((r) => r.model).filter(Boolean))];
 
   async function undo(changeSetId: string, label: string) {
-    const isReceipt = label.startsWith('Receipt:');
-    const question = isReceipt
-      ? `Undo “${label}”? This removes every item added from that receipt, not just ${l.food.name}. You can review and re-apply the receipt afterwards.`
-      : `Undo “${label}”?`;
+    const question = isReceipt(label)
+      ? `Undo this receipt? This removes every item added from it, not just ${l.food.name}. You can review and add it again afterwards.`
+      : 'Undo this change?';
     if (!window.confirm(question)) return;
     setBusy(true);
     try {
       const r = await api.undo(changeSetId, undoKey.current);
       undoKey.current = newKey();
-      setMessage(`Undid “${r.label}”.`);
+      setMessage(isReceipt(r.label) ? 'Undid the receipt.' : 'Undid the change.');
       reload();
     } catch (e) {
       setMessage(e instanceof ApiError ? e.message : 'Could not undo. Try again.');
@@ -45,7 +45,7 @@ export function Item() {
       <header>
         <p className="eyebrow">
           {l.location}
-          {l.status !== 'active' ? ` · ${l.status}` : ''}
+          {l.status !== 'active' ? ` · ${STATUS_LABEL[l.status] ?? l.status.replace(/_/g, ' ')}` : ''}
         </p>
         <h1>{l.food.name}</h1>
       </header>
@@ -58,26 +58,27 @@ export function Item() {
       <section className="card">
         <dl className="facts">
           <dt>Amount</dt>
-          <dd>{l.quantity_text}</dd>
+          <dd>{amount(l.quantity_text)}</dd>
           <dt>Expiry</dt>
           <dd>
-            <ExpiryBadge text={l.expiry_text} urgency={l.urgency} kind={l.expires?.kind} />
-            {l.expires && <div className="muted small">{l.expires.kind === 'printed' ? 'Printed on the package' : `Estimated: ${l.expires.basis}`}</div>}
+            <ExpiryBadge expires={l.expires} urgency={l.urgency} today={data.today} />
+            {l.expires && <div className="muted small">{expiryNote(l.expires)}</div>}
           </dd>
           <dt>Type</dt>
           <dd>{l.food.perishability === 'perishable' ? 'Perishable' : 'Shelf-stable'}</dd>
           <dt>Bought</dt>
-          <dd>{l.acquired_on ?? 'unknown'}</dd>
+          <dd>{l.acquired_on ? dateOnly(l.acquired_on) : 'Unknown'}</dd>
           <dt>Last seen</dt>
-          <dd>{l.evidence_age_days === null ? 'never' : l.evidence_age_days === 0 ? 'today' : `${l.evidence_age_days} days ago`}</dd>
+          <dd>{l.evidence_age_days === null ? 'Never' : cap(ago(l.evidence_age_days))}</dd>
         </dl>
       </section>
 
-      <h2>Evidence</h2>
+      <h2>Where this came from</h2>
       <ul className="cards">
         {data.evidence.map((e) => (
           <li className="card" key={e.observation_id}>
-            <strong>{e.summary}</strong>
+            <strong>{e.kind === 'receipt' ? `${e.store ? titleCase(e.store) : 'Store'} receipt` : cap(e.kind)}</strong>
+            {e.purchased_at && <span className="muted small"> · {dateOnly(e.purchased_at)}</span>}
             {e.line && (
               <div className="raw">
                 {e.line}
@@ -88,24 +89,27 @@ export function Item() {
           </li>
         ))}
       </ul>
-      {models.length > 0 && <p className="muted small">Name and shelf life estimated by {models.join(', ')}.</p>}
 
       <h2>History</h2>
       <ul className="cards">
         {data.history.map((h) => (
           <li className="card" key={`${h.change_set_id}-${h.op}`}>
             <div className="title-row">
-              <strong>{OP_LABEL[h.op] ?? h.op}</strong>
+              <strong>
+                {OP_LABEL[h.op] ?? cap(h.op.replace(/_/g, ' '))}
+                {isReceipt(h.label) && h.op === 'add_lot' ? ' from a receipt' : ''}
+              </strong>
               {h.undone && <span className="badge">Undone</span>}
             </div>
+            {!isReceipt(h.label) && <div className="meta">{h.label}</div>}
             <div className="meta">
-              {h.label} · {when(h.at)} · {h.by ?? 'someone'}
-              {h.via ? ` via ${h.via}` : ''}
+              {when(h.at)} · {h.by ?? 'someone'}
+              {h.via && h.via !== 'Web' ? ` via ${h.via}` : ''}
             </div>
             {!h.undone && !h.is_undo && l.status === 'active' && (
               <div className="actions">
                 <button onClick={() => undo(h.change_set_id, h.label)} disabled={busy}>
-                  {h.label.startsWith('Receipt:') ? 'Undo this receipt' : 'Undo this change'}
+                  {isReceipt(h.label) ? 'Undo this receipt' : 'Undo this change'}
                 </button>
               </div>
             )}

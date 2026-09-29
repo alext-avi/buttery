@@ -10,14 +10,16 @@ export function Login() {
   const [busy, setBusy] = useState(false);
   const [authkit, setAuthkit] = useState(false);
   const [signup, setSignup] = useState(false);
+  const [configLoaded, setConfigLoaded] = useState(false);
 
   useEffect(() => {
     api.authConfig().then(
       (c) => {
         setAuthkit(c.authkit);
         setSignup(c.signup);
+        setConfigLoaded(true);
       },
-      () => {},
+      () => setConfigLoaded(true),
     );
   }, []);
 
@@ -34,9 +36,28 @@ export function Login() {
     }
   }
 
+  const tokenForm = (
+    <form onSubmit={submit}>
+      <label>
+        Access token
+        <input type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)} required />
+      </label>
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+      <button className={authkit ? '' : 'primary'} disabled={busy}>
+        Sign in
+      </button>
+    </form>
+  );
+
   return (
     <main className="login">
-      <h1>Buttery</h1>
+      <h1>
+        buttery<span>.</span>
+      </h1>
       <p className="muted">Sign in to review and correct your household's food.</p>
       {signup && (
         <a className="button primary" href={`/auth/authkit?mode=sign-up&next=${encodeURIComponent(next)}`}>
@@ -48,23 +69,15 @@ export function Login() {
           Continue with your account
         </a>
       )}
-      <form onSubmit={submit}>
-        <label>
-          Access token
-          <input type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)} placeholder="btr_…" required />
-        </label>
-        {error && (
-          <p className="error" role="alert">
-            {error}
-          </p>
-        )}
-        <button className={authkit ? '' : 'primary'} disabled={busy}>
-          Sign in
-        </button>
-      </form>
-      <p className="muted small">
-        Create a token with <code>npm run token:create</code>.
-      </p>
+      {configLoaded &&
+        (authkit ? (
+          <details className="token-login">
+            <summary>Sign in with an access token instead</summary>
+            {tokenForm}
+          </details>
+        ) : (
+          tokenForm
+        ))}
     </main>
   );
 }

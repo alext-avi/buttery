@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router';
 import { api, ApiError, newKey } from '../api';
 import { ErrorBox } from '../components/ErrorBox';
 import { OpCard, type Choice } from '../components/OpCard';
-import { dateOnly } from '../format';
+import { dateOnly, titleCase } from '../format';
 import type { Decision, OpView, ResolveResponse } from '../types';
 import { useLoad } from '../useLoad';
 
@@ -32,6 +32,8 @@ export function Review() {
   const needsLook = lotOps.filter((o) => !o.applied && o.confidence === 'low');
   const others = lotOps.filter((o) => !needsLook.includes(o));
   const ignored = data.ops.filter((o) => o.op === 'ignore_line');
+  const openLots = open.filter((o) => o.op === 'add_lot').length;
+  const added = lotOps.filter((o) => o.applied && o.decision !== 'rejected').length;
   const adding = open.filter((o) => o.op === 'add_lot' && choiceFor(o).action !== 'reject').length;
 
   async function apply() {
@@ -79,18 +81,34 @@ export function Review() {
   const needsDuplicateConfirm = Boolean(duplicate) && open.some((o) => o.op === 'add_lot') && !notDuplicate;
   const otherNotes = data.observation.uncertainties.filter((u) => !u.includes('already recorded'));
 
-  const card = (o: OpView) => <OpCard key={o.op_id} op={o} choice={choiceFor(o)} onChange={o.applied ? undefined : setChoice(o.op_id)} />;
+  const card = (o: OpView) => <OpCard key={o.op_id} op={o} today={data.today} choice={choiceFor(o)} onChange={o.applied ? undefined : setChoice(o.op_id)} />;
 
   return (
     <div>
       <header>
-        <p className="eyebrow">Receipt review</p>
-        <h1>{data.observation.store ?? 'Receipt'}</h1>
-        <p className="muted">
-          {dateOnly(data.observation.purchased_at)} · shared by {data.observation.recorded_by ?? 'someone'}
+        <p className="eyebrow">
+          Receipt review{data.observation.purchased_at ? ` · ${dateOnly(data.observation.purchased_at)}` : ''}
+        </p>
+        <h1>{data.observation.store ? titleCase(data.observation.store) : 'Receipt'}</h1>
+        <p className="muted small">
+          shared by {data.observation.recorded_by ?? 'someone'}
           {data.observation.via ? ` via ${data.observation.via}` : ''}
         </p>
       </header>
+      <div className="stats">
+        <div className="stat">
+          <b>{data.counts.lines}</b>
+          <span>on receipt</span>
+        </div>
+        <div className={`stat${needsLook.length > 0 ? ' warn' : ''}`}>
+          <b>{needsLook.length}</b>
+          <span>to check</span>
+        </div>
+        <div className="stat">
+          <b>{open.length > 0 ? adding : added}</b>
+          <span>{open.length > 0 ? 'adding' : 'added'}</span>
+        </div>
+      </div>
 
       {result?.applied_change_set_id && (
         <div className="banner ok" role="status">
@@ -136,28 +154,37 @@ export function Review() {
 
       {needsLook.length > 0 && (
         <section>
-          <h2>Needs a look ({needsLook.length})</h2>
-          <ul className="cards">{needsLook.map(card)}</ul>
+          <h2 className="warn">
+            <span>Needs a look</span>
+            <span className="n">{needsLook.length}</span>
+          </h2>
+          <ul className="rows warn">{needsLook.map(card)}</ul>
         </section>
       )}
       {others.length > 0 && (
         <section>
-          <h2>Items ({others.length})</h2>
-          <ul className="cards">{others.map(card)}</ul>
+          <h2>
+            <span>Items</span>
+            <span className="n">{others.length}</span>
+          </h2>
+          <ul className="rows">{others.map(card)}</ul>
         </section>
       )}
       {ignored.length > 0 && (
         <section>
           <h2>Not added to inventory</h2>
-          <ul className="cards">{ignored.map(card)}</ul>
+          <ul className="rows quiet">{ignored.map(card)}</ul>
         </section>
       )}
 
       {open.length > 0 && (
         <div className="action-bar">
-          <button className="primary" onClick={apply} disabled={busy || needsDuplicateConfirm}>
-            {busy ? 'Saving…' : adding > 0 ? `Add ${adding} item${adding === 1 ? '' : 's'}` : 'Confirm'}
-          </button>
+          <div className="action-bar-inner">
+            <span>{openLots > 0 ? `${adding} of ${openLots} item${openLots === 1 ? '' : 's'} will be added` : 'Nothing new to add'}</span>
+            <button className="primary" onClick={apply} disabled={busy || needsDuplicateConfirm}>
+              {busy ? 'Saving…' : adding > 0 ? `Add ${adding} item${adding === 1 ? '' : 's'}` : 'Confirm'}
+            </button>
+          </div>
         </div>
       )}
     </div>

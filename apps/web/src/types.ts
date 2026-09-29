@@ -31,6 +31,7 @@ export type OpView = {
 };
 
 export type ProposalView = {
+  today: string;
   proposal: { id: string; status: string; created_at: string };
   observation: {
     id: string;
@@ -78,12 +79,14 @@ export type InventoryResponse = {
   use_soon: { expired: LotView[]; urgent: LotView[]; soon: LotView[] };
   by_location: Record<string, LotView[]>;
   locations: string[];
+  counts: { total: number; use_soon: number; by_location: Record<string, number> };
 };
 
 export type ItemResponse = {
+  today: string;
   lot: LotView;
   food: { id: string; name: string; aliases: string[]; perishability: string };
-  evidence: Array<{ observation_id: string; kind: string; summary: string; line: string | null; price_cents: number | null; review_url: string | null }>;
+  evidence: Array<{ observation_id: string; kind: string; summary: string; store: string | null; purchased_at: string | null; line: string | null; price_cents: number | null; review_url: string | null }>;
   history: Array<{ change_set_id: string; label: string; op: string; at: string; by: string | null; via: string | null; undone: boolean; is_undo: boolean }>;
   reasoning: Array<{ call_id: string; function: string; provider: string; model: string | null; path: string }>;
 };
