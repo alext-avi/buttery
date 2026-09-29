@@ -79,3 +79,11 @@ export type ItemResponse = {
 };
 
 export type UndoResponse = { reverted_change_set_id: string; label: string; lots_voided: number };
+
+export type Me = {
+  user: { id: string; email: string | null; display_name: string | null };
+  household: { id: string; name: string; timezone: string };
+  connection: { id: string; client_name: string };
+};
+export type TokenRow = { connection_id: string; client_name: string; token_prefix: string | null; created_at: string; last_used_at: string | null };
+export type NewToken = { token: string; connection_id: string; client_name: string; mcp_url: string };

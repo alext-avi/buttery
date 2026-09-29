@@ -1,9 +1,11 @@
 import { and, eq, isNull } from 'drizzle-orm';
 import type { Db } from '../db/client';
 import { households, memberships, users } from '../db/schema';
+import { AppError } from '../errors';
 
 export type ProvisionInput = { authSubject?: string | null; email?: string | null; displayName?: string | null };
 export type ProvisionResult = { userId: string; householdId: string; created: boolean };
+export type ProvisionOptions = { allowCreate?: boolean };
 
 async function householdFor(db: Db, userId: string, defaultHouseholdId: string | null): Promise<string> {
   if (defaultHouseholdId) return defaultHouseholdId;
@@ -12,7 +14,7 @@ async function householdFor(db: Db, userId: string, defaultHouseholdId: string |
   return m.householdId;
 }
 
-export async function provisionUser(db: Db, input: ProvisionInput): Promise<ProvisionResult> {
+export async function provisionUser(db: Db, input: ProvisionInput, opts: ProvisionOptions = {}): Promise<ProvisionResult> {
   const email = input.email?.trim().toLowerCase() || null;
 
   if (input.authSubject) {
@@ -33,6 +35,10 @@ export async function provisionUser(db: Db, input: ProvisionInput): Promise<Prov
       }
       return { userId: byEmail.id, householdId: await householdFor(db, byEmail.id, byEmail.defaultHouseholdId), created: false };
     }
+  }
+
+  if (opts.allowCreate === false) {
+    throw new AppError('signup_closed', 'New sign-ups are closed for this Buttery. Ask the household owner for access.', 403);
   }
 
   return db.transaction(async (tx) => {

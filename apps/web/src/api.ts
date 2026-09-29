@@ -1,4 +1,4 @@
-import type { Decision, InventoryResponse, ItemResponse, ProposalView, ResolveResponse, UndoResponse } from './types';
+import type { Decision, InventoryResponse, ItemResponse, Me, NewToken, ProposalView, ResolveResponse, TokenRow, UndoResponse } from './types';
 
 export class ApiError extends Error {
   constructor(readonly status: number, readonly code: string, message: string, readonly details?: unknown) {
@@ -29,7 +29,7 @@ async function request<T>(method: 'GET' | 'POST', path: string, body?: unknown):
 export const newKey = () => crypto.randomUUID();
 
 export const api = {
-  authConfig: () => request<{ authkit: boolean }>('GET', '/auth/config'),
+  authConfig: () => request<{ authkit: boolean; signup: boolean }>('GET', '/auth/config'),
   tokenLogin: (token: string, next: string) => request<{ ok: true; next: string }>('POST', '/auth/token-login', { token, next }),
   proposal: (id: string) => request<ProposalView>('GET', `/api/proposals/${id}`),
   resolve: (id: string, body: { decisions: Decision[]; accept_remaining: boolean; apply: boolean; idempotency_key: string }) =>
@@ -37,4 +37,9 @@ export const api = {
   inventory: (location?: string) => request<InventoryResponse>('GET', `/api/inventory${location ? `?location=${encodeURIComponent(location)}` : ''}`),
   item: (id: string) => request<ItemResponse>('GET', `/api/items/${id}`),
   undo: (changeSetId: string, key: string) => request<UndoResponse>('POST', `/api/change-sets/${changeSetId}/undo`, { idempotency_key: key }),
+  me: () => request<Me>('GET', '/api/me'),
+  updateHousehold: (body: { name?: string; timezone?: string }) => request<Me>('POST', '/api/household', body),
+  tokens: () => request<{ tokens: TokenRow[]; mcp_url: string }>('GET', '/api/tokens'),
+  createToken: (client_name: string) => request<NewToken>('POST', '/api/tokens', { client_name }),
+  revokeToken: (id: string) => request<{ ok: true }>('POST', `/api/tokens/${id}/revoke`, {}),
 };

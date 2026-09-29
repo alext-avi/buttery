@@ -74,6 +74,7 @@ describe('AuthKit', () => {
 
   it('completes web sign-in via the callback', async () => {
     const ak = createAuthkit(config, db, { fetchUser, exchangeCode: async () => fetchUser('user_01') })!;
+    await provisionUser(db, { authSubject: 'user_01', email: 'alex@example.com' }); // returning user → back to `next`
     const app = createApp(testDeps({ config, authkit: ak }));
     const start = await app.request('/auth/authkit?next=/review/abc');
     expect(start.status).toBe(302);

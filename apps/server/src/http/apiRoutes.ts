@@ -4,7 +4,9 @@ import { IdempotencyKeySchema, shortlist } from '@buttery/domain';
 import { principalFromSession, readSession } from '../auth/session';
 import { AppError } from '../errors';
 import type { Principal } from '../identity/principal';
+import { createPat, listPats, revokePat } from '../identity/tokens';
 import { undoChangeSet } from '../services/changes';
+import { updateHousehold, UpdateHouseholdSchema } from '../services/household';
 import { loadCatalog } from '../services/foods';
 import { getWhoami } from '../services/identity';
 import { getInventoryPage, getItem } from '../services/inventory';
@@ -47,6 +49,26 @@ export function apiRoutes(deps: AppDeps) {
     const q = c.req.query('q');
     const list = q ? shortlist(q, foods, 20, 0.1) : foods.sort((a, b) => a.name.localeCompare(b.name));
     return c.json({ foods: list.map((f) => ({ food_id: f.id, name: f.name, category: f.category, perishability: f.perishability })) });
+  });
+
+  api.get('/tokens', async (c) => c.json({ tokens: await listPats(deps.db, c.get('principal')), mcp_url: `${deps.config.PUBLIC_BASE_URL}/mcp` }));
+
+  api.post('/tokens', async (c) => {
+    const { client_name } = z.object({ client_name: z.string().trim().min(1).max(60) }).parse(await c.req.json());
+    const p = c.get('principal');
+    const { token, connectionId } = await createPat(deps.db, { userId: p.userId, householdId: p.householdId, clientName: client_name });
+    return c.json({ token, connection_id: connectionId, client_name, mcp_url: `${deps.config.PUBLIC_BASE_URL}/mcp` }, 201);
+  });
+
+  api.post('/tokens/:id/revoke', async (c) => {
+    await revokePat(deps.db, c.get('principal'), z.uuid().parse(c.req.param('id')));
+    return c.json({ ok: true });
+  });
+
+  api.post('/household', async (c) => {
+    const p = c.get('principal');
+    await updateHousehold(deps.db, p, UpdateHouseholdSchema.parse(await c.req.json()));
+    return c.json(await getWhoami(deps.db, p, deps.config));
   });
 
   return api;

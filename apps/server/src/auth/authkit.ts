@@ -5,14 +5,15 @@ import type { Config } from '../config';
 import type { Db } from '../db/client';
 import { connections } from '../db/schema';
 import type { Principal } from '../identity/principal';
+import { AppError } from '../errors';
 import { findUserBySubject, provisionUser } from '../identity/provision';
 
 export type AuthkitUser = { id: string; email: string | null; firstName: string | null; lastName: string | null };
 
 export type Authkit = {
   resolveBearer(token: string): Promise<Principal | null>;
-  loginUrl(next: string): string;
-  completeLogin(code: string): Promise<{ userId: string; householdId: string }>;
+  loginUrl(next: string, mode?: 'sign-in' | 'sign-up'): string;
+  completeLogin(code: string): Promise<{ userId: string; householdId: string; created: boolean }>;
 };
 
 type Overrides = { jwks?: JWTVerifyGetKey; fetchUser?: (id: string) => Promise<AuthkitUser>; exchangeCode?: (code: string) => Promise<AuthkitUser> };
@@ -41,7 +42,7 @@ export function createAuthkit(config: Config, db: Db, o: Overrides = {}): Authki
   const fetchUser = o.fetchUser ?? (async (id: string) => toUser(await workos.userManagement.getUser(id)));
   const exchangeCode = o.exchangeCode ?? (async (code: string) => toUser((await workos.userManagement.authenticateWithCode({ clientId, code })).user));
   const ensure = (u: AuthkitUser) =>
-    provisionUser(db, { authSubject: u.id, email: u.email, displayName: [u.firstName, u.lastName].filter(Boolean).join(' ') || null });
+    provisionUser(db, { authSubject: u.id, email: u.email, displayName: [u.firstName, u.lastName].filter(Boolean).join(' ') || null }, { allowCreate: config.SIGNUP_MODE === 'open' });
 
   return {
     async resolveBearer(token) {
@@ -53,17 +54,26 @@ export function createAuthkit(config: Config, db: Db, o: Overrides = {}): Authki
       }
       if (!payload.sub) return null;
       const known = await findUserBySubject(db, payload.sub);
-      const { userId, householdId } = known ?? (await ensure(await fetchUser(payload.sub)));
+      let identity = known;
+      if (!identity) {
+        try {
+          identity = await ensure(await fetchUser(payload.sub));
+        } catch (err) {
+          if (err instanceof AppError && err.code === 'signup_closed') return null;
+          throw err;
+        }
+      }
+      const { userId, householdId } = identity;
       const oauthClientId = (payload.client_id as string | undefined) ?? (payload.azp as string | undefined) ?? 'oauth';
       const conn = await ensureOAuthConnection(db, userId, householdId, oauthClientId);
       return { userId, householdId, connectionId: conn.id, clientName: conn.clientName };
     },
-    loginUrl(next) {
-      return workos.userManagement.getAuthorizationUrl({ provider: 'authkit', clientId, redirectUri: `${config.PUBLIC_BASE_URL}/auth/callback`, state: next });
+    loginUrl(next, mode = 'sign-in') {
+      return workos.userManagement.getAuthorizationUrl({ provider: 'authkit', clientId, redirectUri: `${config.PUBLIC_BASE_URL}/auth/callback`, state: next, screenHint: mode });
     },
     async completeLogin(code) {
       const r = await ensure(await exchangeCode(code));
-      return { userId: r.userId, householdId: r.householdId };
+      return { userId: r.userId, householdId: r.householdId, created: r.created };
     },
   };
 }

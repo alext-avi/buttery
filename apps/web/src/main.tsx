@@ -6,6 +6,7 @@ import { Inventory } from './pages/Inventory';
 import { Item } from './pages/Item';
 import { Login } from './pages/Login';
 import { Review } from './pages/Review';
+import { Settings } from './pages/Settings';
 import './styles.css';
 
 const router = createBrowserRouter([
@@ -17,6 +18,7 @@ const router = createBrowserRouter([
       { path: '/review/:proposalId', element: <Review /> },
       { path: '/inventory', element: <Inventory /> },
       { path: '/items/:lotId', element: <Item /> },
+      { path: '/settings', element: <Settings /> },
       { path: '*', element: <p className="muted">Page not found.</p> },
     ],
   },

@@ -9,9 +9,16 @@ export function Login() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [authkit, setAuthkit] = useState(false);
+  const [signup, setSignup] = useState(false);
 
   useEffect(() => {
-    api.authConfig().then((c) => setAuthkit(c.authkit), () => {});
+    api.authConfig().then(
+      (c) => {
+        setAuthkit(c.authkit);
+        setSignup(c.signup);
+      },
+      () => {},
+    );
   }, []);
 
   async function submit(e: FormEvent) {
@@ -31,8 +38,13 @@ export function Login() {
     <main className="login">
       <h1>Buttery</h1>
       <p className="muted">Sign in to review and correct your household's food.</p>
+      {signup && (
+        <a className="button primary" href={`/auth/authkit?mode=sign-up&next=${encodeURIComponent(next)}`}>
+          Create your household
+        </a>
+      )}
       {authkit && (
-        <a className="button primary" href={`/auth/authkit?next=${encodeURIComponent(next)}`}>
+        <a className={signup ? 'button' : 'button primary'} href={`/auth/authkit?next=${encodeURIComponent(next)}`}>
           Continue with your account
         </a>
       )}

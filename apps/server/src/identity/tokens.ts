@@ -1,7 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq, isNull } from 'drizzle-orm';
 import type { Executor } from '../db/client';
 import { connections } from '../db/schema';
+import { notFound } from '../errors';
 import type { Principal } from './principal';
 
 export const PAT_PREFIX = 'btr_';
@@ -39,4 +40,28 @@ export async function resolvePat(db: Executor, token: string): Promise<Principal
   if (!row) return null;
   await db.update(connections).set({ lastUsedAt: new Date() }).where(eq(connections.id, row.id));
   return { userId: row.userId, householdId: row.householdId, connectionId: row.id, clientName: row.clientName };
+}
+
+export async function listPats(db: Executor, p: Principal) {
+  const rows = await db
+    .select()
+    .from(connections)
+    .where(and(eq(connections.userId, p.userId), eq(connections.householdId, p.householdId), eq(connections.kind, 'pat'), isNull(connections.revokedAt)))
+    .orderBy(desc(connections.createdAt));
+  return rows.map((r) => ({
+    connection_id: r.id,
+    client_name: r.clientName,
+    token_prefix: r.tokenPrefix,
+    created_at: r.createdAt.toISOString(),
+    last_used_at: r.lastUsedAt?.toISOString() ?? null,
+  }));
+}
+
+export async function revokePat(db: Executor, p: Principal, connectionId: string): Promise<void> {
+  const rows = await db
+    .update(connections)
+    .set({ revokedAt: new Date() })
+    .where(and(eq(connections.id, connectionId), eq(connections.userId, p.userId), eq(connections.householdId, p.householdId), eq(connections.kind, 'pat'), isNull(connections.revokedAt)))
+    .returning({ id: connections.id });
+  if (!rows.length) throw notFound('Token');
 }

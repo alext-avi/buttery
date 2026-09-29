@@ -6,6 +6,7 @@ const EnvSchema = z.object({
   PUBLIC_BASE_URL: z.url().default('http://localhost:8790'),
   SESSION_SECRET: z.string().min(32),
   WEB_DIST_DIR: z.string().optional(),
+  SIGNUP_MODE: z.enum(['open', 'closed']).default('open'),
   AUTHKIT_DOMAIN: z.url().optional(),
   AUTHKIT_ISSUER: z.url().optional(),
   WORKOS_CLIENT_ID: z.string().optional(),

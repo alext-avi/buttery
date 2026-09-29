@@ -9,6 +9,7 @@ export function Layout() {
         </Link>
         <nav>
           <NavLink to="/inventory">Inventory</NavLink>
+          <NavLink to="/settings">Settings</NavLink>
         </nav>
       </header>
       <main>
