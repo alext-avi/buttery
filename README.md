@@ -147,10 +147,14 @@ typecheck, tests and the web build. A merge to `main` then:
 `vc2-2c-4gb` VM in Silicon Valley (about $0.027/hr), with Caddy providing Let's Encrypt HTTPS in
 front of the app on `127.0.0.1:8793`. The demo has its own database, household and tokens.
 
+**Claude chat (claude.ai, desktop, mobile):** Settings → Connectors → Add custom connector →
+URL `https://140-82-48-162.sslip.io/mcp` → Connect → sign in with WorkOS AuthKit. Sign-up is open
+on the demo; the first sign-in creates your account and household.
+
+**Claude Code / CLIs** can use a personal access token instead:
+
 ```sh
-# on the VM, as the deploy user, to create a presenter token (sign-up is closed on the demo):
-docker compose --project-name buttery-demo --env-file /opt/buttery/.env.demo -f /opt/buttery/deploy/demo/compose.yaml \
-  exec app npm run token:create -- --email you@example.com --client "Claude Code"
+ssh root@140.82.48.162 'docker exec buttery-demo-app-1 npm run -s token:create -- --email you@example.com --client "Claude Code"'
 claude mcp add --transport http buttery https://140-82-48-162.sslip.io/mcp --header "Authorization: Bearer <btr_ token>"
 ```
 
