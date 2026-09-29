@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import type { Authkit } from '../auth/authkit';
 import type { BearerResolver } from '../auth/bearer';
 import type { Config } from '../config';
 import type { Db } from '../db/client';
@@ -16,7 +17,7 @@ export type AppDeps = {
   db: Db;
   reasoning: ReasoningPort;
   resolveBearer?: BearerResolver;
-  authkit?: { loginUrl(next: string): string } | null;
+  authkit?: Authkit | null;
 };
 
 export function createApp(deps: AppDeps) {

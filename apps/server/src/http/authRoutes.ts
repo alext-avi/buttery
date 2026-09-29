@@ -24,6 +24,19 @@ export function authRoutes(deps: AppDeps) {
     await writeSession(c, deps.config, { u: pat.userId, h: pat.householdId, c: connectionId });
     return c.json({ ok: true, next: safeNext(body.next) });
   });
+  app.get('/authkit', (c) => {
+    if (!deps.authkit) throw new AppError('not_configured', 'Account sign-in is not configured', 404);
+    return c.redirect(deps.authkit.loginUrl(safeNext(c.req.query('next'))));
+  });
+  app.get('/callback', async (c) => {
+    if (!deps.authkit) throw new AppError('not_configured', 'Account sign-in is not configured', 404);
+    const code = c.req.query('code');
+    if (!code) throw new AppError('invalid_input', 'Missing code', 400);
+    const { userId, householdId } = await deps.authkit.completeLogin(code);
+    const connectionId = await ensureWebConnection(deps.db, userId, householdId);
+    await writeSession(c, deps.config, { u: userId, h: householdId, c: connectionId });
+    return c.redirect(safeNext(c.req.query('state')));
+  });
   app.post('/logout', (c) => {
     clearSession(c);
     return c.json({ ok: true });

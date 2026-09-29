@@ -51,3 +51,8 @@ export async function provisionUser(db: Db, input: ProvisionInput): Promise<Prov
     return { userId: user!.id, householdId: household!.id, created: true };
   });
 }
+
+export async function findUserBySubject(db: Db, sub: string): Promise<{ userId: string; householdId: string } | null> {
+  const [u] = await db.select().from(users).where(eq(users.authSubject, sub)).limit(1);
+  return u ? { userId: u.id, householdId: await householdFor(db, u.id, u.defaultHouseholdId) } : null;
+}
