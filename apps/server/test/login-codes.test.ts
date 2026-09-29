@@ -3,7 +3,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { ipKey } from '../src/auth/rateLimit';
 import { loadConfig } from '../src/config';
-import { loginCodes } from '../src/db/schema';
+import { serializeSigned } from 'hono/utils/cookie';
+import { connections, loginCodes } from '../src/db/schema';
 import { createApp } from '../src/http/app';
 import type { Principal } from '../src/identity/principal';
 import { mintPageLink } from '../src/identity/loginCodes';
@@ -137,6 +138,51 @@ describe('page links from agents', () => {
     const pass = cookieOf(await open(app, codeFrom((await mintPageLink(testDb(), config, principal, `/review/${first}`)).url)))!;
     expect((await post(app, `/api/change-sets/${other.applied_change_set_id}/undo`, { idempotency_key: 'undo-other-receipt' }, pass)).status).toBe(401);
     expect((await post(app, `/api/change-sets/${applied.applied_change_set_id}/undo`, { idempotency_key: 'undo-this-receipt' }, pass)).status).toBe(200);
+  });
+
+  it('an item pass can undo a change to that item alone, never a whole receipt', async () => {
+    const app = createApp(deps());
+    const { principal } = await seedUser(testDb());
+    const receipt = fixtureReceipt('warehouse');
+    const single = await submitReceipt(deps(), principal, { kind: 'receipt', payload: { ...receipt, receipt_number: 'one-line', lines: receipt.lines.slice(0, 1) }, idempotency_key: 'seed-one-line' });
+    const whole = await seedReceipt(principal, 'mixed');
+    const one = (await applyReceipt(principal, single.proposal_id)) as any;
+    const many = (await applyReceipt(principal, whole)) as any;
+    expect(many.created_lot_ids.length).toBeGreaterThan(1);
+
+    const manyPass = cookieOf(await open(app, codeFrom((await mintPageLink(testDb(), config, principal, `/items/${many.created_lot_ids[0]}`)).url)))!;
+    expect((await post(app, `/api/change-sets/${many.applied_change_set_id}/undo`, { idempotency_key: 'undo-whole-receipt' }, manyPass)).status).toBe(401);
+    const onePass = cookieOf(await open(app, codeFrom((await mintPageLink(testDb(), config, principal, `/items/${one.created_lot_ids[0]}`)).url)))!;
+    expect((await post(app, `/api/change-sets/${one.applied_change_set_id}/undo`, { idempotency_key: 'undo-single-item' }, onePass)).status).toBe(200);
+  });
+
+  it('a pass never reaches tokens, household settings or the food catalog', async () => {
+    const app = createApp(deps());
+    const { principal } = await seedUser(testDb());
+    const id = await seedReceipt(principal);
+    const pass = cookieOf(await open(app, codeFrom((await mintPageLink(testDb(), config, principal, `/review/${id}`)).url)))!;
+    expect((await post(app, '/api/tokens', { client_name: 'Sneaky' }, pass)).status).toBe(401);
+    expect((await post(app, `/api/tokens/${principal.connectionId}/revoke`, {}, pass)).status).toBe(401);
+    expect((await post(app, '/api/household', { name: 'Renamed' }, pass)).status).toBe(401);
+    expect((await get(app, '/api/foods', pass)).status).toBe(401);
+  });
+
+  it('a pass cookie can never be replayed as a sign-in, nor a sign-in as a pass', async () => {
+    const app = createApp(deps());
+    const { principal, token } = await seedUser(testDb());
+    const id = await seedReceipt(principal);
+    const pass = cookieOf(await open(app, codeFrom((await mintPageLink(testDb(), config, principal, `/review/${id}`)).url)))!;
+    const session = await signIn(app, token);
+    const passValue = pass.slice(pass.indexOf('=') + 1);
+    const sessionValue = session.slice(session.indexOf('=') + 1);
+    expect((await get(app, '/api/me', `btr_session=${passValue}`)).status).toBe(401);
+    expect((await get(app, `/api/proposals/${id}`, `btr_pass=${sessionValue}`)).status).toBe(401);
+
+    // A well-formed pass signed with the session key (what a leaked or confused signer would produce) is not a pass.
+    const [web] = await testDb().select().from(connections).where(eq(connections.parentConnectionId, principal.connectionId));
+    const forged = [{ k: 'proposal', i: id, u: principal.userId, h: principal.householdId, c: web!.id, e: Date.now() + 60_000 }];
+    const cookie = (await serializeSigned('btr_pass', JSON.stringify(forged), config.SESSION_SECRET)).split(';')[0]!;
+    expect((await get(app, `/api/proposals/${id}`, cookie)).status).toBe(401);
   });
 
   it('an item pass shows that item only', async () => {

@@ -32,7 +32,7 @@ stripped and the page opens with no Open screen and no code spent.
 | Page | Pass kind | API calls the pass allows |
 |---|---|---|
 | `/review/<proposal>` | `proposal` | `GET /api/proposals/<id>`, `POST /api/proposals/<id>/resolve`, and undo of change sets caused by that proposal |
-| `/items/<lot>` | `lot` | `GET /api/items/<id>`, and undo of change sets that touched that lot |
+| `/items/<lot>` | `lot` | `GET /api/items/<id>`, and undo of a change set that touched that lot and no other (never a whole receipt) |
 | `/inventory` (any filter) | `inventory` | `GET /api/inventory` |
 
 - **Pages that are never shareable.** `/settings`, `/login` and anything else are refused at minting. Settings holds tokens, so it always
@@ -66,7 +66,8 @@ the connection or its parent is revoked.
 
 ## Page pass
 
-- **Storage.** The pass lives in its own signed, httpOnly `btr_pass` cookie, separate from the `btr_session` sign-in cookie. It holds up
+- **Storage.** The pass lives in its own signed, httpOnly `btr_pass` cookie, separate from the `btr_session` sign-in cookie. It is signed
+  with a key derived from `SESSION_SECRET`, because Hono signs only a cookie's value: a pass can never verify as a session, or vice versa. It holds up
   to 10 passes. Each pass records its kind, id, household, user, web connection and expiry (24 hours from opening).
 - **How API requests use it.** The web API maps each request to the pass it would need (the table above). If a live pass covers the
   request, that pass's principal serves it. If the browser is also signed in to the same household, the session is used. Otherwise the
