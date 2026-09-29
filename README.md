@@ -10,6 +10,17 @@ you.
 It's calm, competent record-keeping, not a diet tracker. It is honest about uncertainty: "about
 half a jug, estimated from a photo 3 days ago".
 
+**Why it matters.** People cook and shop at huge scale, but almost nobody keeps track of the food
+in between. In August 2026, Allrecipes drew **75.6M** visits and Instacart **48.1M**. The tools
+that track what's on hand drew far less: AnyList **390K**, Plan to Eat **449K**, Mealime
+**127K**. Meanwhile people look up Buttery's core question by hand: shelf-life sites StillTasty and
+EatByDate get about **140K** visits a month, in sessions of under a minute ("how long does opened
+milk last?"). The people who do keep a system use it heavily: Plan to Eat averages 4m 42s per
+visit with a 29% bounce rate. The barrier is the upkeep, and Buttery removes it by making the
+record a by-product of talking to the assistant you already use.
+<sub>Source: [Similarweb](docs/market/similarweb.md), worldwide web traffic, Jun–Aug 2026. These
+are modeled estimates of web visits only; app-first products are undercounted.</sub>
+
 **Status (Sep 29):** receipts work end to end, from a photo in Claude to reviewed, undoable
 inventory, live at **https://140-82-48-162.sslip.io**. Fridge photos, recipes, shopping lists and
 "what did I cook" are designed in the [spec](docs/superpowers/specs/2026-09-29-buttery-design.md)
@@ -64,6 +75,17 @@ Details: [`docs/runbooks/deploy-vultr.md`](docs/runbooks/deploy-vultr.md).
   sizes, duplicate protection and undo (inventory 0 → 6 → 6 → 0).
 
 Details: [`docs/duplocloud.md`](docs/duplocloud.md).
+
+### Similarweb: market evidence
+
+- The market case above comes from the **Similarweb API**: web traffic and engagement for 14
+  sites across recipes and grocery, meal planning, shopping lists and shelf-life lookups
+  (June–August 2026, worldwide).
+- The raw data is committed ([`docs/market/similarweb-2026-08.json`](docs/market/similarweb-2026-08.json))
+  and re-pullable with [`scripts/similarweb-market.mjs`](scripts/similarweb-market.mjs).
+- This is research input for the pitch, not a runtime dependency.
+
+Details and caveats: [`docs/market/similarweb.md`](docs/market/similarweb.md).
 
 ## How it works
 
