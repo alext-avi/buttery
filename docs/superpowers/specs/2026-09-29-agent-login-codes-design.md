@@ -112,7 +112,11 @@ The server instructions and `whoami` tell agents to pass each Buttery link throu
 - **Failure messages.**
   - **Expired or used:** "This link has expired or was already used. Ask your assistant for a new one." with a "Sign in instead" link.
   - **Rate limited:** "Too many tries. Wait a few minutes and try again."
-- **`/login` and Settings** are unchanged. `/login` sits outside the Layout and ignores `login`.
+- **`/login` offers account sign-in only.** The web app no longer has a token box: tokens are for agents and CLIs, and the
+  `/auth/token-login` endpoint stays for tests and scripts. With AuthKit off, `/login` says account sign-in isn't set up and to ask the
+  assistant for a link. `/login` ignores `login=`.
+- **Stepping off a linked page.** A browser that holds a pass but asks for anything outside it gets `401 outside_link`. The web app sends
+  it to `/login?reason=outside_link`, which says the link only opens the page the assistant shared.
 
 ## Out of scope
 

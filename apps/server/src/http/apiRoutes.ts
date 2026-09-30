@@ -26,7 +26,10 @@ export function apiRoutes(deps: AppDeps, pageLinks: PageLinks) {
     const need = apiNeed(c.req.method, c.req.path);
     const pass = need ? await pageLinks.principalFor(c, need) : null;
     const p = session && pass && session.householdId === pass.householdId ? session : (pass ?? session);
-    if (!p) throw new AppError('unauthorized', 'Sign in required', 401);
+    if (!p) {
+      if (await pageLinks.hasPass(c)) throw new AppError('outside_link', 'That link only opens the page your assistant shared. Sign in to see the rest.', 401);
+      throw new AppError('unauthorized', 'Sign in required', 401);
+    }
     c.set('principal', p);
     await next();
   });

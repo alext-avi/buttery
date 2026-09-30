@@ -81,8 +81,11 @@ describe('page links from agents', () => {
 
     expect((await get(app, `/api/proposals/${id}`, pass)).status).toBe(200);
     expect((await post(app, `/api/proposals/${id}/resolve`, { decisions: [], accept_remaining: true, apply: true, idempotency_key: 'apply-via-pass' }, pass)).status).toBe(200);
-    expect((await get(app, '/api/inventory', pass)).status).toBe(401);
+    const outside = await get(app, '/api/inventory', pass);
+    expect(outside.status).toBe(401);
+    expect(((await outside.json()) as any).error).toBe('outside_link');
     expect((await get(app, '/api/me', pass)).status).toBe(401);
+    expect(((await (await get(app, '/api/me')).json()) as any).error).toBe('unauthorized');
     expect((await get(app, '/api/tokens', pass)).status).toBe(401);
   });
 

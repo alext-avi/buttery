@@ -2,12 +2,15 @@ import { expect, test } from '@playwright/test';
 import { expectNoHorizontalScroll, signIn, state } from './helpers';
 
 test.describe.serial('receipt review on a phone', () => {
-  test('a review link asks for sign-in, then opens the receipt', async ({ page }) => {
-    const { token, proposal_id } = state();
+  test('a plain review link asks for sign-in; signed in, it opens the receipt', async ({ page }) => {
+    const { proposal_id } = state();
     await page.goto(`/review/${proposal_id}`);
     await expect(page).toHaveURL(/\/login\?next=/);
-    await page.getByLabel('Access token').fill(token);
-    await page.getByRole('button', { name: 'Sign in' }).click();
+    // Account sign-in only: there is no token box in the web app.
+    await expect(page.getByLabel('Access token')).toHaveCount(0);
+    await expect(page.getByTestId('no-account-sign-in')).toBeVisible();
+    await signIn(page);
+    await page.goto(`/review/${proposal_id}`);
     await expect(page.getByRole('heading', { name: 'PANTRY CLUB' })).toBeVisible();
     await expect(page.getByText('GRK YOGURT 2X32 OZ')).toBeVisible();
     // The verdict tells the user how much attention this receipt needs.

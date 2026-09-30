@@ -56,6 +56,8 @@ export function apiNeed(method: string, path: string): Need | null {
 export type PageLinks = {
   /** The principal a page pass grants for this API request, if any. */
   principalFor(c: Context, need: Need): Promise<Principal | null>;
+  /** Whether the browser holds any live page pass (so a refusal can say "that link only covers one page"). */
+  hasPass(c: Context): Promise<boolean>;
   /** Handles `?login=` on page requests: grants the page pass if needed, then redirects to the same URL without it. */
   middleware: MiddlewareHandler;
 };
@@ -133,5 +135,7 @@ export function createPageLinks(deps: AppDeps, limiter: FailureLimiter = createF
     return c.redirect(target);
   };
 
-  return { principalFor, middleware };
+  const hasPass = async (c: Context) => (await readPasses(c, secret)).length > 0;
+
+  return { principalFor, hasPass, middleware };
 }

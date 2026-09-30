@@ -11,7 +11,8 @@ test.describe('page links from the agent, on a phone', () => {
 
     // The pass covers this receipt only: anywhere else still asks for a sign-in.
     await page.getByRole('link', { name: 'Inventory' }).click();
-    await expect(page).toHaveURL(/\/login\?next=%2Finventory/);
+    await expect(page).toHaveURL(/\/login\?next=%2Finventory&reason=outside_link/);
+    await expect(page.getByText('That link only opens the page your assistant shared')).toBeVisible();
 
     // The same link works again in another browser while it's live.
     const other = await browser.newPage();
