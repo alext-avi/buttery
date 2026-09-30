@@ -49,6 +49,32 @@ jobs:
       - name: Check deployment scripts
         run: bash -n scripts/*.sh
 
+  # Two tiny real calls to Crusoe (about 1-2K tokens a run). Kept apart from Verify and from the
+  # deploy gate: the app has a deterministic fallback, so a Crusoe outage shouldn't block a release.
+  crusoe-live:
+    name: Crusoe live smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      CRUSOE_API_KEY: ${{ secrets.CRUSOE_API_KEY }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '26'
+          cache: npm
+      - run: npm ci
+      - name: Call Crusoe for real
+        run: |
+          # Fork PRs get no secrets; say so instead of passing with the tests silently skipped.
+          if [ -z "$CRUSOE_API_KEY" ]; then
+            echo "::warning::CRUSOE_API_KEY isn't available to this run; live tests skipped."
+            exit 0
+          fi
+          npm test -w packages/reasoning -- test/live.test.ts
+
   deploy:
     name: Publish and deploy demo
     needs: verify
