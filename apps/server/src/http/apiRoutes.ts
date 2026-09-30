@@ -6,6 +6,7 @@ import { principalFromSession, readSession } from '../auth/session';
 import { AppError } from '../errors';
 import type { Principal } from '../identity/principal';
 import { createPat, listPats, revokePat } from '../identity/tokens';
+import { logActivity } from '../services/activity';
 import { undoChangeSet } from '../services/changes';
 import { updateHousehold, UpdateHouseholdSchema } from '../services/household';
 import { loadCatalog } from '../services/foods';
@@ -46,6 +47,29 @@ export function apiRoutes(deps: AppDeps, pageLinks: PageLinks) {
   api.get('/inventory', async (c) => c.json(await getInventoryPage(deps, c.get('principal'), { location: c.req.query('location') || undefined })));
 
   api.get('/items/:id', async (c) => c.json(await getItem(deps, c.get('principal'), z.uuid().parse(c.req.param('id')))));
+
+  api.post('/items/:id/activity', async (c) => {
+    const body = z
+      .object({
+        kind: z.enum(['used', 'finished', 'discarded', 'froze', 'thawed', 'opened', 'moved']),
+        fraction: z.number().min(0).max(1).optional(),
+        to_location: z.string().min(1).max(40).optional(),
+        idempotency_key: IdempotencyKeySchema,
+      })
+      .parse(await c.req.json());
+    const lotId = z.uuid().parse(c.req.param('id'));
+    return c.json(
+      await logActivity(deps, c.get('principal'), {
+        activities: [
+          {
+            kind: body.kind,
+            items: [{ lot_id: lotId, ...(body.fraction !== undefined ? { quantity: { kind: 'approx', fraction: body.fraction } } : {}), ...(body.to_location ? { to_location: body.to_location } : {}) }],
+          },
+        ],
+        idempotency_key: body.idempotency_key,
+      }),
+    );
+  });
 
   api.post('/change-sets/:id/undo', async (c) => {
     const { idempotency_key } = z.object({ idempotency_key: IdempotencyKeySchema }).parse(await c.req.json());

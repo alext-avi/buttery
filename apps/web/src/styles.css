@@ -137,3 +137,7 @@ dt { color: var(--muted); font-size: 0.85rem; }
 dd { margin: 0; overflow-wrap: anywhere; }
 ul.notes { list-style: none; padding: 0; margin: 8px 0; }
 .conf-medium { color: var(--text); border-color: var(--border); background: var(--soft); font-weight: 600; }
+.quick-actions { margin-top: 12px; }
+.quick-actions .actions { margin-top: 0; }
+.quick-actions .move { align-items: end; margin-top: 10px; }
+.quick-actions .move button { flex: 0 0 auto; }

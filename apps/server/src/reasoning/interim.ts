@@ -1,5 +1,5 @@
 import { hashJson, similarity, type LineKind } from '@buttery/domain';
-import type { CanonicalizeInput, CanonicalizeOutput, ReasoningCallRecord, ReasoningPort, ReasoningResult, ShelfLifeInput, ShelfLifeOutput } from './port';
+import type { CanonicalizeInput, CanonicalizeOutput, ParseActivityInput, ParseActivityOutput, ReasoningCallRecord, ReasoningPort, ReasoningResult, ShelfLifeInput, ShelfLifeOutput } from './port';
 
 const SIZE_TOKENS = /\b\d+(\.\d+)?\s*(x\s*\d+(\.\d+)?\s*)?(oz|lb|lbs|gal|ct|count|pk|pack|can|fl|qt|l|ml|g|kg)\b/gi;
 
@@ -65,6 +65,13 @@ export function createInterimReasoning(): ReasoningPort {
     async estimateShelfLife(input: ShelfLifeInput) {
       const per_state = Object.fromEntries(input.states.map((s) => [s, { days: null, confidence: 'low' as const }]));
       return record<ShelfLifeOutput>('estimateShelfLife', input, { per_state, rationale: 'No estimate available without the reasoning model' });
+    },
+    async parseActivity(input: ParseActivityInput) {
+      return record<ParseActivityOutput>('parseActivity', input, {
+        activities: [],
+        ambiguities: [{ text: input.text, reason: "couldn't parse without the reasoning model", candidate_lot_ids: [] }],
+        confidence: 'low',
+      });
     },
   };
 }

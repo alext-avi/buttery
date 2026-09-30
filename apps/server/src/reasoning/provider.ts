@@ -9,5 +9,6 @@ export function createReasoning(db: Db): ReasoningPort {
   return {
     canonicalizeItems: (input, ctx) => provider.canonicalizeItems(input, { ...ctx, cache }),
     estimateShelfLife: (input, ctx) => provider.estimateShelfLife(input, { ...ctx, cache }),
+    parseActivity: (input, ctx) => provider.parseActivity(input, { ...ctx, cache }),
   };
 }

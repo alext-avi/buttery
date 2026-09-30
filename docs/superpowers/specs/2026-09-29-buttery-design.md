@@ -308,8 +308,10 @@ user the returned review link; report lot-selection assumptions and offer undo.
 - `log_text(text, idempotency_key)` — free-text events ("we used half the milk, froze the
   chicken"). Parsed by the reasoning module (`parseActivity`) into the same `log_activity`
   structures and stored as a `user_statement` observation with the verbatim text.
-  High-confidence parsed activities are applied under the same policy as `log_activity`. Low-confidence or
-  ambiguous ones become a proposal with a review link. The web inventory view has the same "quick log" box.
+  High-confidence parsed activities that the server fully resolves are applied under the same policy as
+  `log_activity`. Low-confidence, ambiguous or unresolvable ones change nothing and come back with the
+  interpretation for the agent to confirm in chat. The item page has quick actions (used half, finished,
+  freeze/thaw, opened, discard, move) instead of a free-text box.
 - `resolve_proposal(proposal_id, decisions[{op_id, accept|reject|edit, edits?}]?, apply: bool, idempotency_key)`
 - `correct_item(lot_id, fields, reason, idempotency_key)`
 - `undo(change_set_id, idempotency_key)`
@@ -355,7 +357,7 @@ template, a model setting, a deterministic fallback, and a logged call record.
 |---|---|---|---|---|
 | `canonicalizeItems` | Receipt/free-text lines (verbatim + optional agent hints) and, per line, a server-built **candidate shortlist** of existing foods and active lots (alias, name and trigram matches) | Per line: `canonical_name`, `category`, `perishability`, `package`, `line_kind`, `match: {food_id | "new", confidence}`, rationale | `submit_observation` (receipt), `log_text` | Alias/trigram match only; unmatched → `create_food` op at `low` confidence |
 | `estimateShelfLife` | Food name, category, storage state and location, anchor date | Days per state, `confidence`, short rationale | Food creation; state changes where the food lacks a value for the new state | Category default table |
-| `parseActivity` | Verbatim text + compact context (recent and active lots, locations, known recipes) | `activities[]` matching the `log_activity` schema, `ambiguities[]`, `confidence` | `log_text`, web quick log | None. Text is stored as an observation and routed to review with "couldn't parse" |
+| `parseActivity` | Verbatim text + compact context (recent and active lots, locations, known recipes) | `activities[]` matching the `log_activity` schema, `ambiguities[]`, `confidence` | `log_text` | None. Text is stored as an observation and the agent asks the user ("couldn't parse") |
 | `rankRecipes` | Deterministic top candidates with coverage, use-soon lots, constraints | Reordered ids, explanations, optional `ideas[]` | `find_recipes` | Deterministic order; no explanations or ideas |
 
 **Guardrails**
@@ -386,7 +388,7 @@ and reports match accuracy per model.
 | Source | Default | Notes |
 |---|---|---|
 | `log_activity` (direct statement) | Apply | Ambiguity (multiple lots) resolved by lot-selection rule and reported; no match → nothing applied, candidates returned. |
-| `log_text` (free text, parsed by the reasoning module) | Apply if parse confidence is `high` and there are no ambiguities; otherwise review | The verbatim text is always stored as evidence. |
+| `log_text` (free text, parsed by the reasoning module) | Apply only if the parse is `high` confidence, has no ambiguities, **and** the server resolves every item; otherwise nothing changes and the agent confirms in chat, then calls `log_activity` with explicit lot ids *(revised 2026-09-29: chat confirmation replaces a review proposal)* | The verbatim text is always stored as evidence. |
 | `log_activity cooked` consumption | Apply as approximate | Quantities marked `approx`; unit-incompatible or ambiguous ingredients go to attention. |
 | Receipt | **Review all** (slice 1) | Later option: auto-apply `high` confidence ops, review the rest. |
 | Pantry/fridge photo | Review | `flag_not_seen` never depletes a lot. |
@@ -514,7 +516,8 @@ without operator help. ✅ A revoked token no longer authenticates.
 `set_preferences`; expiry recomputation on open/freeze/thaw; pantry-photo proposals;
 use-soon view; optional photo attachment on review.
 ✅ `log_text("we used half the milk and froze the chicken")` applies two changes. A
-deliberately ambiguous text ("threw out the old stuff") becomes a proposal, not a change.
+deliberately ambiguous text ("threw out the old stuff") changes nothing and comes back for
+confirmation in chat.
 ✅ "Froze the chicken" changes its effective expiry with a recorded basis and is undoable.
 ✅ A fridge photo produces `flag_not_seen` without depleting anything.
 ✅ Use-soon lists fridge perishables by urgency with printed/est badges.
