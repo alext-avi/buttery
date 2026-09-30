@@ -136,7 +136,6 @@ dl.facts { display: grid; grid-template-columns: max-content 1fr; gap: 8px 16px;
 dt { color: var(--muted); font-size: 0.85rem; }
 dd { margin: 0; overflow-wrap: anywhere; }
 ul.notes { list-style: none; padding: 0; margin: 8px 0; }
-.token-login summary { cursor: pointer; color: var(--muted); font-size: 0.9rem; padding: 8px 0; }
 .conf-medium { color: var(--text); border-color: var(--border); background: var(--soft); font-weight: 600; }
 .quick-actions { margin-top: 12px; }
 .quick-actions .actions { margin-top: 0; }

@@ -6,6 +6,7 @@ import { createDb } from '../src/db/client';
 import { runMigrations } from '../src/db/migrate';
 import { connections } from '../src/db/schema';
 import { provisionUser } from '../src/identity/provision';
+import { mintPageLink } from '../src/identity/loginCodes';
 import { hashToken } from '../src/identity/tokens';
 import { submitReceipt } from '../src/services/receipts';
 import { createFakeReasoning } from './helpers/fakeReasoning';
@@ -39,8 +40,14 @@ const dup = await submitReceipt({ db, config: loadConfig(), reasoning: createFak
   idempotency_key: 'e2e-seed-warehouse-dup',
 });
 
+const reviewPath = `/review/${r.proposal_id}`;
+const codes = {
+  link_code: (await mintPageLink(db, loadConfig(), principal, reviewPath)).code,
+  expired_code: (await mintPageLink(db, loadConfig(), principal, reviewPath, new Date(Date.now() - 60 * 60_000))).code,
+};
+
 const out = fileURLToPath(new URL('../.e2e/', import.meta.url));
 mkdirSync(out, { recursive: true });
-writeFileSync(`${out}/state.json`, JSON.stringify({ token: E2E_TOKEN, proposal_id: r.proposal_id, dup_proposal_id: dup.proposal_id }));
+writeFileSync(`${out}/state.json`, JSON.stringify({ token: E2E_TOKEN, proposal_id: r.proposal_id, dup_proposal_id: dup.proposal_id, ...codes }));
 await db.$client.end();
 console.log('e2e seed ready');

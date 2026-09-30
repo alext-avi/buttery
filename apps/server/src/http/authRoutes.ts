@@ -34,7 +34,8 @@ export function authRoutes(deps: AppDeps) {
     const body = TokenLoginSchema.parse(await c.req.json());
     const pat = await resolvePat(deps.db, body.token.trim());
     if (!pat) throw new AppError('invalid_token', 'That token is not valid.', 401);
-    const connectionId = await ensureWebConnection(deps.db, pat.userId, pat.householdId);
+    // Parented to the pasted token, so revoking it signs this browser out too.
+    const connectionId = await ensureWebConnection(deps.db, pat.userId, pat.householdId, { id: pat.connectionId, name: `Web (token for ${pat.clientName})` });
     await writeSession(c, deps.config, { u: pat.userId, h: pat.householdId, c: connectionId });
     return c.json({ ok: true, next: safeNext(body.next) });
   });

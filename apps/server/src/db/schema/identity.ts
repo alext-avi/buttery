@@ -1,4 +1,4 @@
-import { pgTable, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { integer, pgTable, primaryKey, text, timestamp, uuid, type AnyPgColumn } from 'drizzle-orm/pg-core';
 
 export const ts = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' });
 
@@ -38,7 +38,29 @@ export const connections = pgTable('connections', {
   oauthClientId: text('oauth_client_id'),
   tokenHash: text('token_hash').unique(),
   tokenPrefix: text('token_prefix'),
+  /** The connection that vouched for this one: a web session created from a login code or a pasted token. */
+  parentConnectionId: uuid('parent_connection_id').references((): AnyPgColumn => connections.id),
   lastUsedAt: ts('last_used_at'),
   revokedAt: ts('revoked_at'),
+  createdAt: ts('created_at').notNull().defaultNow(),
+});
+
+/**
+ * Codes an agent attaches to a link. Opening the link within the window grants a page pass for that one page
+ * (not a sign-in); it can be opened any number of times until it expires. Only an HMAC of the code is stored.
+ */
+export const loginCodes = pgTable('login_codes', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  codeHash: text('code_hash').notNull().unique(),
+  /** The page the code opens, e.g. /review/<id>, and what it grants: a receipt, an item or the inventory. */
+  path: text('path').notNull(),
+  scopeKind: text('scope_kind', { enum: ['proposal', 'lot', 'inventory'] }).notNull(),
+  scopeId: uuid('scope_id'),
+  householdId: uuid('household_id').notNull().references(() => households.id),
+  userId: uuid('user_id').notNull().references(() => users.id),
+  connectionId: uuid('connection_id').notNull().references(() => connections.id),
+  /** How many times the link was opened; kept for the record, not a limit. */
+  uses: integer('uses').notNull().default(0),
+  expiresAt: ts('expires_at').notNull(),
   createdAt: ts('created_at').notNull().defaultNow(),
 });

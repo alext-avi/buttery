@@ -149,7 +149,7 @@ docker/, Dockerfile, docker-compose.yml   Container build and local stack
 
 `whoami` · `submit_observation` · `resolve_proposal` · `undo` · `upsert_food` ·
 `get_household_summary` · `search_inventory` · `get_item` ·
-`log_activity` · `log_text` · `correct_item` · `get_changes`
+`log_activity` · `log_text` · `correct_item` · `get_changes` · `get_login_code`
 
 `submit_observation` returns the receipt's verdict, the lines worth a glance and the next step for
 the agent, so most receipts are confirmed in conversation rather than on a screen.
@@ -161,6 +161,10 @@ confirmation in chat, and nothing is guessed.
 
 Every state-changing call takes an `idempotency_key`. Retries are safe, and a re-sent receipt is
 detected as a duplicate instead of being counted twice.
+
+`get_login_code` turns a review, item or inventory link into a one-tap link: the person taps
+**Open** and sees that page for 24 hours without signing in. It doesn't sign the browser in or
+reach any other page. Revoking the agent's token also revokes its links and the access they gave.
 
 ## Getting started
 

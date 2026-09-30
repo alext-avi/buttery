@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { IdempotencyKeySchema, shortlist } from '@buttery/domain';
+import { apiNeed, type PageLinks } from '../auth/pageLinks';
 import { principalFromSession, readSession } from '../auth/session';
 import { AppError } from '../errors';
 import type { Principal } from '../identity/principal';
@@ -15,14 +16,21 @@ import { getProposalView, resolveProposal, ResolveProposalInputSchema } from '..
 import type { AppDeps } from './app';
 import { requireJson } from './authRoutes';
 
-export function apiRoutes(deps: AppDeps) {
+export function apiRoutes(deps: AppDeps, pageLinks: PageLinks) {
   const api = new Hono<{ Variables: { principal: Principal } }>();
 
   api.use('*', async (c, next) => {
     if (c.req.method !== 'GET') requireJson(c.req.header('content-type'));
     const s = await readSession(c, deps.config.SESSION_SECRET);
-    const p = s ? await principalFromSession(deps.db, s) : null;
-    if (!p) throw new AppError('unauthorized', 'Sign in required', 401);
+    const session = s ? await principalFromSession(deps.db, s) : null;
+    // A page pass from an agent's link covers only that page's own calls; it never widens the session.
+    const need = apiNeed(c.req.method, c.req.path);
+    const pass = need ? await pageLinks.principalFor(c, need) : null;
+    const p = session && pass && session.householdId === pass.householdId ? session : (pass ?? session);
+    if (!p) {
+      if (await pageLinks.hasPass(c)) throw new AppError('outside_link', 'That link only opens the page your assistant shared. Sign in to see the rest.', 401);
+      throw new AppError('unauthorized', 'Sign in required', 401);
+    }
     c.set('principal', p);
     await next();
   });

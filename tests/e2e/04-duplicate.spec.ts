@@ -11,7 +11,7 @@ test('a possible duplicate receipt warns and needs confirmation before applying'
   await expect(page.getByTestId('verdict')).toHaveCount(0);
   await expect(warning).toContainText('worth a glance');
   await expect(warning.getByRole('link', { name: 'Open the earlier receipt' })).toBeVisible();
-  const apply = page.getByRole('button', { name: /Add \d+ items?/ });
+  const apply = page.getByRole('button', { name: /Add all \d+/ });
   await expect(apply).toBeDisabled();
   await page.getByLabel('This is a different purchase').check();
   await expect(apply).toBeEnabled();

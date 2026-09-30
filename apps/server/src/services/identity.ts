@@ -19,5 +19,6 @@ export async function getWhoami(db: Db, p: Principal, config: Config) {
     household: { id: household.id, name: household.name, timezone: household.timezone },
     connection: { id: p.connectionId, client_name: p.clientName },
     links: { inventory: `${config.PUBLIC_BASE_URL}/inventory` },
+    page_links: 'Pass each Buttery link you share through get_login_code so the user can open that page without signing in.',
   };
 }

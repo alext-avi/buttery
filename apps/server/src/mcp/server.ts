@@ -5,6 +5,7 @@ import { MCP_INSTRUCTIONS } from './instructions';
 import { registerActivityTools } from './tools/activity';
 import { registerFoodTools } from './tools/foods';
 import { registerInventoryTools } from './tools/inventory';
+import { registerLoginTools } from './tools/login';
 import { registerObservationTools } from './tools/observations';
 import { registerWhoami } from './tools/whoami';
 
@@ -15,5 +16,6 @@ export function buildMcpServer(deps: AppDeps, p: Principal): McpServer {
   registerObservationTools(server, deps, p);
   registerFoodTools(server, deps, p);
   registerActivityTools(server, deps, p);
+  registerLoginTools(server, deps, p);
   return server;
 }

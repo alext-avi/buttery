@@ -70,6 +70,6 @@ describe('web API', () => {
     const { token } = await seedUser(db, 'alex@example.com', 'Claude Code');
     const cookie = await login(app, token);
     const me = (await (await app.request('/api/me', { headers: { cookie } })).json() as any);
-    expect(me.connection.client_name).toBe('Web');
+    expect(me.connection.client_name).toBe('Web (token for Claude Code)');
   });
 });

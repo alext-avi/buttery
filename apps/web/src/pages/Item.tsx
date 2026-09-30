@@ -196,7 +196,7 @@ export function Item() {
             {!isReceipt(h.label) && h.op !== 'update_lot' && <div className="meta">{h.label}</div>}
             <div className="meta">
               {when(h.at)} · {h.by ?? 'someone'}
-              {h.via && h.via !== 'Web' ? ` via ${h.via}` : ''}
+              {h.via && !h.via.startsWith('Web') ? ` via ${h.via}` : ''}
             </div>
             {!h.undone && !h.is_undo && l.status !== 'voided' && (
               <div className="actions">

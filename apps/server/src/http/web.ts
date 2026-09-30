@@ -6,6 +6,8 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import type { Config } from '../config';
 
 const RESERVED = ['/api', '/auth/', '/mcp', '/.well-known', '/healthz'];
+/** Paths that are never web app pages: the reserved prefixes plus built assets. */
+export const NOT_PAGES = [...RESERVED, '/assets/'];
 
 export function mountWeb(app: Hono, config: Config): void {
   const dist = config.WEB_DIST_DIR ?? fileURLToPath(new URL('../../../web/dist', import.meta.url));

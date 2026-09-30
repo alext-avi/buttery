@@ -20,7 +20,9 @@ async function request<T>(method: 'GET' | 'POST', path: string, body?: unknown):
   }
   const data = await res.json().catch(() => ({}));
   if (res.status === 401 && path.startsWith('/api/')) {
-    window.location.assign(`/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+    // A page-link visitor stepping off their page gets told why they're being asked to sign in.
+    const reason = data.error === 'outside_link' ? '&reason=outside_link' : '';
+    window.location.assign(`/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}${reason}`);
   }
   if (!res.ok) throw new ApiError(res.status, data.error ?? 'error', data.message ?? res.statusText, data.details);
   return data as T;
@@ -32,7 +34,6 @@ export const newKey = () => crypto.randomUUID();
 
 export const api = {
   authConfig: () => request<{ authkit: boolean; signup: boolean }>('GET', '/auth/config'),
-  tokenLogin: (token: string, next: string) => request<{ ok: true; next: string }>('POST', '/auth/token-login', { token, next }),
   proposal: (id: string) => request<ProposalView>('GET', `/api/proposals/${id}`),
   resolve: (id: string, body: { decisions: Decision[]; accept_remaining: boolean; apply: boolean; idempotency_key: string; confirm_possible_duplicate?: boolean }) =>
     request<ResolveResponse>('POST', `/api/proposals/${id}/resolve`, body),
